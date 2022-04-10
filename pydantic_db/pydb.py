@@ -39,7 +39,7 @@ class PyDB:
     """Class to use pydantic models as ORM models."""
 
     def __init__(self) -> None:
-        self._tables: dict[str, ModelType] = {}
+        self._tables: dict[ModelType, ModelType] = {}  # type: ignore
 
     def __getitem__(self, item: Type[ModelType]) -> _PyDB[ModelType]:
         return self._tables[item]
