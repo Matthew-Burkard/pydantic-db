@@ -1,9 +1,10 @@
 """Main."""
-from typing import Any, Generic, Optional, Type, TypeVar
+from typing import Any, Callable, Generic, Optional, Type, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel
-from pydantic.fields import Field, Undefined
+import caseswitcher
+from pydantic import BaseModel, fields
+from pydantic.fields import Undefined
 from pydantic.typing import NoArgAnyCallable
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
@@ -11,6 +12,10 @@ ModelType = TypeVar("ModelType", bound=BaseModel)
 
 class _PyDB(Generic[ModelType]):
     """Provides DB CRUD methods for a model type."""
+
+    def __init__(self, pydantic_model: ModelType, tablename: str) -> None:
+        self._pydantic_model = pydantic_model
+        self._tablename = tablename
 
     async def find_one(self, pk: UUID) -> ModelType:
         """Get one record."""
@@ -39,18 +44,27 @@ class PyDB:
     """Class to use pydantic models as ORM models."""
 
     def __init__(self) -> None:
-        self._tables: dict[ModelType, ModelType] = {}  # type: ignore
+        self._tables: dict[ModelType, _PyDB[ModelType]] = {}  # type: ignore
 
     def __getitem__(self, item: Type[ModelType]) -> _PyDB[ModelType]:
         return self._tables[item]
 
-    def table(self, cls: ModelType) -> ModelType:
+    def table(
+        self, tablename: str | None = None
+    ) -> Callable[[Type[ModelType]], Type[ModelType]]:
         """Make the decorated model a database table."""
-        self._tables[cls] = cls
-        return cls
+
+        def _wrapper(cls: Type[ModelType]) -> Type[ModelType]:
+            self._tables[cls] = _PyDB(
+                cls, tablename or caseswitcher.to_snake(cls.__name__)
+            )
+            return cls
+
+        return _wrapper
 
 
-def field(
+# noinspection PyPep8Naming
+def Field(
     default: Any = Undefined,
     *,
     default_factory: Optional[NoArgAnyCallable] = None,
@@ -80,10 +94,11 @@ def field(
     primary_key: bool = False,
     required: bool = False,
     foreign_key: ModelType | None = None,
+    pydantic_only: bool = False,
     **extra: Any,
 ) -> Any:
     """PyDB field wrapping a pydantic field."""
-    return Field(
+    return fields.Field(
         default,
         default_factory=default_factory,
         alias=alias,
@@ -112,4 +127,5 @@ def field(
         primary_key=primary_key,
         required=required,
         foreign_key=foreign_key,
+        pydantic_only=pydantic_only,
     )

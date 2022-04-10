@@ -21,6 +21,14 @@ tests = ["coverage[toml] (>=5.0.2)", "hypothesis", "pympler", "pytest (>=4.3.0)"
 tests_no_zope = ["coverage[toml] (>=5.0.2)", "hypothesis", "pympler", "pytest (>=4.3.0)", "six", "mypy", "pytest-mypy-plugins", "cloudpickle"]
 
 [[package]]
+name = "case-switcher"
+version = "1.3.0"
+description = "Library to change the casing of strings."
+category = "main"
+optional = false
+python-versions = ">=3.9,<4.0"
+
+[[package]]
 name = "colorama"
 version = "0.4.4"
 description = "Cross-platform colored terminal text."
@@ -159,7 +167,7 @@ python-versions = ">=3.6"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "c97d6033d1bca5ca3435ef68f509d83485ee121a3d996be162eeced61f8ce4fb"
+content-hash = "e21b6694bb9d8348620545dcd068ed9fa0a04f8d1c982db00b2764e1c02df662"
 
 [metadata.files]
 atomicwrites = [
@@ -169,6 +177,10 @@ atomicwrites = [
 attrs = [
     {file = "attrs-21.4.0-py2.py3-none-any.whl", hash = "sha256:2d27e3784d7a565d36ab851fe94887c5eccd6a463168875832a1be79c82828b4"},
     {file = "attrs-21.4.0.tar.gz", hash = "sha256:626ba8234211db98e869df76230a137c4c40a12d72445c45d5f5b716f076e2fd"},
+]
+case-switcher = [
+    {file = "case-switcher-1.3.0.tar.gz", hash = "sha256:15e1ba1c99e8acd97be9aaea134392aabc6716d18be7a587aac13e4c1e86be6c"},
+    {file = "case_switcher-1.3.0-py3-none-any.whl", hash = "sha256:2ce6d5c9573e6cd5f501ff079be8b46e3755e1a00da95e413a136dcbb9a86289"},
 ]
 colorama = [
     {file = "colorama-0.4.4-py2.py3-none-any.whl", hash = "sha256:9f47eda37229f68eee03b24b9748937c7dc3868f906e8ba69fbcbdd3bc5dc3e2"},

@@ -4,17 +4,17 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 
-from pydantic_db.pydb import field, PyDB
+from pydantic_db.pydb import Field, PyDB
 
 db = PyDB()
 
 
-@db.table
+@db.table()
 class Coffee(BaseModel):
     """Drink it in the morning."""
 
-    id: UUID = field(primary_key=True, default_factory=uuid4)
-    name: str
+    id: UUID = Field(primary_key=True, default_factory=uuid4)
+    name: str = Field(max_length=63)
 
 
 async def test() -> None:
