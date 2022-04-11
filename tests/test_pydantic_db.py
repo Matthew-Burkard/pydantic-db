@@ -17,7 +17,12 @@ class Coffee(BaseModel):
     name: str = Field(max_length=63)
 
 
+def test_schema() -> None:
+    print(Coffee.schema())
+
+
 async def test() -> None:
+    print(Coffee.schema())
     # Insert
     coffee = Coffee(name="mocha")
     coffee = await db[Coffee].insert(coffee)

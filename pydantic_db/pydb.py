@@ -3,9 +3,11 @@ from typing import Any, Callable, Generic, Optional, Type, TypeVar
 from uuid import UUID
 
 import caseswitcher
+import sqlalchemy
 from pydantic import BaseModel, fields
 from pydantic.fields import Undefined
 from pydantic.typing import NoArgAnyCallable
+from sqlalchemy import Column, MetaData, Table
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
 
@@ -13,9 +15,23 @@ ModelType = TypeVar("ModelType", bound=BaseModel)
 class _PyDB(Generic[ModelType]):
     """Provides DB CRUD methods for a model type."""
 
-    def __init__(self, pydantic_model: ModelType, tablename: str) -> None:
+    def __init__(
+        self, pydantic_model: ModelType, tablename: str, metadata: MetaData
+    ) -> None:
         self._pydantic_model = pydantic_model
         self._tablename = tablename
+        self._metadata = metadata
+        self._sqlalchemy_model = self._generate_sqlalchemy_model()
+
+    def _generate_sqlalchemy_model(self) -> Table:
+        return sqlalchemy.Table(
+            self._tablename,
+            self._metadata,
+            *(
+                Column(k, sqlalchemy.String(63), primary_key=True)
+                for k, _v in self._pydantic_model.__fields__.items()
+            ),
+        )
 
     async def find_one(self, pk: UUID) -> ModelType:
         """Get one record."""
@@ -43,8 +59,9 @@ class _PyDB(Generic[ModelType]):
 class PyDB:
     """Class to use pydantic models as ORM models."""
 
-    def __init__(self) -> None:
+    def __init__(self, metadata: MetaData) -> None:
         self._tables: dict[ModelType, _PyDB[ModelType]] = {}  # type: ignore
+        self._metadata = metadata
 
     def __getitem__(self, item: Type[ModelType]) -> _PyDB[ModelType]:
         return self._tables[item]
@@ -56,7 +73,7 @@ class PyDB:
 
         def _wrapper(cls: Type[ModelType]) -> Type[ModelType]:
             self._tables[cls] = _PyDB(
-                cls, tablename or caseswitcher.to_snake(cls.__name__)
+                cls, tablename or caseswitcher.to_snake(cls.__name__), self._metadata
             )
             return cls
 
@@ -92,7 +109,7 @@ def Field(
     repr_: bool = True,
     # PyDB fields.
     primary_key: bool = False,
-    required: bool = False,
+    indexed: bool = False,
     foreign_key: ModelType | None = None,
     pydantic_only: bool = False,
     **extra: Any,
@@ -125,7 +142,7 @@ def Field(
         repr=repr_,
         **extra,
         primary_key=primary_key,
-        required=required,
+        indexed=indexed,
         foreign_key=foreign_key,
         pydantic_only=pydantic_only,
     )
