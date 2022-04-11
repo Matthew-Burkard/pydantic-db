@@ -1,13 +1,12 @@
 """Main."""
-from typing import Any, Callable, Generic, Optional, Type, TypeVar
+import uuid
+from typing import Any, Callable, Generic, Type, TypeVar
 from uuid import UUID
 
 import caseswitcher
 import sqlalchemy
-from pydantic import BaseModel, fields
-from pydantic.fields import Undefined
-from pydantic.typing import NoArgAnyCallable
-from sqlalchemy import Column, MetaData, Table
+from pydantic import BaseModel
+from sqlalchemy.dialects import postgresql
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
 
@@ -16,22 +15,17 @@ class _PyDB(Generic[ModelType]):
     """Provides DB CRUD methods for a model type."""
 
     def __init__(
-        self, pydantic_model: ModelType, tablename: str, metadata: MetaData
+        self,
+        pydb: "PyDB",
+        pydantic_model: ModelType,
+        tablename: str,
+        metadata: sqlalchemy.MetaData,
     ) -> None:
+        self._pydb = pydb
         self._pydantic_model = pydantic_model
         self._tablename = tablename
         self._metadata = metadata
         self._sqlalchemy_model = self._generate_sqlalchemy_model()
-
-    def _generate_sqlalchemy_model(self) -> Table:
-        return sqlalchemy.Table(
-            self._tablename,
-            self._metadata,
-            *(
-                Column(k, sqlalchemy.String(63), primary_key=True)
-                for k, _v in self._pydantic_model.__fields__.items()
-            ),
-        )
 
     async def find_one(self, pk: UUID) -> ModelType:
         """Get one record."""
@@ -55,16 +49,57 @@ class _PyDB(Generic[ModelType]):
     async def delete(self, pk: UUID) -> bool:
         """Delete a record."""
 
+    def _generate_sqlalchemy_model(self) -> sqlalchemy.Table:
+        for k, v in self._pydantic_model.__fields__.items():
+            print(k, v)
+        return sqlalchemy.Table(
+            self._tablename,
+            self._metadata,
+            *(
+                sqlalchemy.Column(
+                    k,
+                    self._get_sqlalchemy_type(v.type_),
+                    primary_key=v.field_info.extra["primary_key"],
+                    nullable=v.required,
+                )
+                for k, v in self._pydantic_model.__fields__.items()
+            ),
+        )
+
+    def _get_sqlalchemy_type(
+        self, field_type: Any, max_length: int | None = None
+    ) -> Any:
+        if issubclass(field_type, BaseModel):
+            foreign_table = self._pydb.get(field_type)
+            # TODO Get primary key column.
+            return (
+                sqlalchemy.ForeignKey(f"{foreign_table._tablename}.id")
+                if foreign_table
+                else sqlalchemy.JSON
+            )
+        return {
+            uuid.UUID: postgresql.UUID(as_uuid=True),
+            str: sqlalchemy.String(max_length),
+            int: sqlalchemy.Integer,
+            float: sqlalchemy.Float,
+            dict: sqlalchemy.JSON,
+            list: sqlalchemy.JSON,  # TODO Many to many?
+        }[field_type]
+
 
 class PyDB:
     """Class to use pydantic models as ORM models."""
 
-    def __init__(self, metadata: MetaData) -> None:
+    def __init__(self, metadata: sqlalchemy.MetaData) -> None:
         self._tables: dict[ModelType, _PyDB[ModelType]] = {}  # type: ignore
         self._metadata = metadata
 
     def __getitem__(self, item: Type[ModelType]) -> _PyDB[ModelType]:
         return self._tables[item]
+
+    def get(self, model: Type[ModelType]) -> _PyDB[ModelType] | None:
+        """Get table or None."""
+        return self._tables.get(model)
 
     def table(
         self, tablename: str | None = None
@@ -73,76 +108,20 @@ class PyDB:
 
         def _wrapper(cls: Type[ModelType]) -> Type[ModelType]:
             self._tables[cls] = _PyDB(
-                cls, tablename or caseswitcher.to_snake(cls.__name__), self._metadata
+                self,
+                cls,
+                tablename or caseswitcher.to_snake(cls.__name__),
+                self._metadata,
             )
             return cls
 
         return _wrapper
 
 
-# noinspection PyPep8Naming
-def Field(
-    default: Any = Undefined,
-    *,
-    default_factory: Optional[NoArgAnyCallable] = None,
-    alias: str = None,
-    title: str = None,
-    description: str = None,
-    exclude: Any = None,
-    include: Any = None,
-    const: bool = None,
-    gt: float = None,
-    ge: float = None,
-    lt: float = None,
-    le: float = None,
-    multiple_of: float = None,
-    max_digits: int = None,
-    decimal_places: int = None,
-    min_items: int = None,
-    max_items: int = None,
-    unique_items: bool = None,
-    min_length: int = None,
-    max_length: int = None,
-    allow_mutation: bool = True,
-    regex: str = None,
-    discriminator: str = None,
-    repr_: bool = True,
-    # PyDB fields.
-    primary_key: bool = False,
-    indexed: bool = False,
-    foreign_key: ModelType | None = None,
-    pydantic_only: bool = False,
-    **extra: Any,
-) -> Any:
-    """PyDB field wrapping a pydantic field."""
-    return fields.Field(
-        default,
-        default_factory=default_factory,
-        alias=alias,
-        title=title,
-        description=description,
-        exclude=exclude,
-        include=include,
-        const=const,
-        gt=gt,
-        ge=ge,
-        lt=lt,
-        le=le,
-        multiple_of=multiple_of,
-        max_digits=max_digits,
-        decimal_places=decimal_places,
-        min_items=min_items,
-        max_items=max_items,
-        unique_items=unique_items,
-        min_length=min_length,
-        max_length=max_length,
-        allow_mutation=allow_mutation,
-        regex=regex,
-        discriminator=discriminator,
-        repr=repr_,
-        **extra,
-        primary_key=primary_key,
-        indexed=indexed,
-        foreign_key=foreign_key,
-        pydantic_only=pydantic_only,
-    )
+class Column(BaseModel):
+    """A pydantic-db table column."""
+
+    primary_key: bool = False
+    indexed: bool = False
+    foreign_key: ModelType | None = None
+    pydantic_only: bool = False

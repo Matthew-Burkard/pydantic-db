@@ -2,27 +2,25 @@
 import asyncio
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel
+import sqlalchemy
+from pydantic import BaseModel, Field
 
-from pydantic_db.pydb import Field, PyDB
+from pydantic_db.pydb import Column, PyDB
 
-db = PyDB()
+metadata = sqlalchemy.MetaData()
+engine = sqlalchemy.create_engine("sqlite://", echo=True, future=True)
+db = PyDB(metadata)
 
 
 @db.table()
 class Coffee(BaseModel):
     """Drink it in the morning."""
 
-    id: UUID = Field(primary_key=True, default_factory=uuid4)
+    id: UUID = Field(default_factory=uuid4, **Column(primary_key=True).dict())
     name: str = Field(max_length=63)
 
 
-def test_schema() -> None:
-    print(Coffee.schema())
-
-
 async def test() -> None:
-    print(Coffee.schema())
     # Insert
     coffee = Coffee(name="mocha")
     coffee = await db[Coffee].insert(coffee)
