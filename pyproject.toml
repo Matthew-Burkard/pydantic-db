@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pydantic-db"
-version = "0.6.0"
+version = "0.6.1"
 description = ""
 authors = ["Matthew Burkard <matthewjburkard@gmail.com>"]
 
@@ -13,6 +13,7 @@ tortoise-orm = "^0.19.0"
 [tool.poetry.dev-dependencies]
 pytest = "^7.1.1"
 mypy = "^0.942"
+coverage = "^6.3.2"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
