@@ -1,15 +1,20 @@
 """PyDB tests."""
-import asyncio
+import unittest
 from uuid import UUID, uuid4
 
-import sqlalchemy
 from pydantic import BaseModel, Field
 
 from pydantic_db.pydb import Column, PyDB
 
-metadata = sqlalchemy.MetaData()
-engine = sqlalchemy.create_engine("sqlite://", echo=True, future=True)
-db = PyDB(metadata)
+db = PyDB()
+
+
+@db.table()
+class Flavor(BaseModel):
+    """Drink it in the morning."""
+
+    id: UUID = Field(default_factory=uuid4, **Column(primary_key=True).dict())
+    name: str = Field(max_length=63)
 
 
 @db.table()
@@ -17,32 +22,51 @@ class Coffee(BaseModel):
     """Drink it in the morning."""
 
     id: UUID = Field(default_factory=uuid4, **Column(primary_key=True).dict())
-    name: str = Field(max_length=63)
+    flavor: Flavor
 
 
-async def test() -> None:
-    # Insert
-    coffee = Coffee(name="mocha")
-    coffee = await db[Coffee].insert(coffee)
+class PyDBTests(unittest.TestCase):
+    def test_create_tables(self) -> None:
+        self.assertEqual(["coffee", "flavor"], [])
 
-    # Find one
-    coffee = await db[Coffee].find_one(coffee.id)
+    def test_find_one(self) -> None:
+        # TODO Insert record.
+        # TODO Find one record.
+        self.assertEqual("", "")
 
-    # Find many
-    await db[Coffee].find_many()
-    await db[Coffee].find_many(where={"name": "mocha"})
+    def test_find_many(self) -> None:
+        # TODO Insert 3 records.
+        # TODO Find two records with filter.
+        self.assertEqual("", "")
+        # TODO Find all records.
+        self.assertEqual("", "")
 
-    # Update
-    coffee.name = "caramel"
-    coffee = await db[Coffee].update(coffee)
+    def test_insert(self) -> None:
+        # TODO Insert record.
+        # TODO Find one record.
+        self.assertEqual("", "")
 
-    # Upsert
-    coffee.name = "vanilla"
-    coffee = await db[Coffee].upsert(coffee)
+    def test_update(self) -> None:
+        # TODO Insert record.
+        # TODO update record.
+        # TODO Find one record.
+        self.assertEqual("", "")
 
-    # Delete
-    await db[Coffee].delete(coffee.id)
+    def test_upsert(self) -> None:
+        # TODO Insert record.
+        # TODO upsert record.
+        # TODO Find one record.
+        self.assertEqual("", "")
+        # TODO upsert new record.
+        # TODO Find one record.
+        self.assertEqual("", "")
+
+    def test_delete(self) -> None:
+        # TODO Insert record.
+        # TODO Delete record.
+        # TODO Find one record.
+        self.assertEqual(None, None)
 
 
-if __name__ == "__main__":
-    asyncio.run(test())
+class ORMPyDBTests(unittest.TestCase):
+    pass
