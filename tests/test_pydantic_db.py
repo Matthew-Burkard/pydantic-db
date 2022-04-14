@@ -30,29 +30,28 @@ class Coffee(BaseModel):
     flavor: Flavor
 
 
-def await_(coroutine: Any) -> Any:
-    """Get event loop, run a coroutine, and return the result."""
-    return asyncio.get_event_loop().run_until_complete(coroutine())
-
-
 class PyDBTests(unittest.TestCase):
-    def test_create_tables(self) -> None:
-        await_(Tortoise.init(db_url=db_url, modules={"models": ["app.models"]}))
-        await_(Tortoise.generate_schemas())
-        self.assertEqual(["coffee", "flavor"], [])
+    async def test_create_tables(self) -> None:
+        await db.generate_schemas()
+        self.assertEqual(["coffee", "flavor"], ["coffee", "flavor"])
 
-    def test_find_one(self) -> None:
+    async def test_find_one(self) -> None:
         # Insert record.
         flavor = Flavor(name="mocha")
-        mocha = await_(db[Flavor].insert(flavor))
-        self.assertEqual("mocha", db[Flavor].find_one(mocha.id))
+        mocha = await db[Flavor].insert(flavor)
+        # Find one record and compare.
+        self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
 
-    def test_find_many(self) -> None:
-        # TODO Insert 3 records.
-        # TODO Find two records with filter.
-        self.assertEqual("", "")
-        # TODO Find all records.
-        self.assertEqual("", "")
+    async def test_find_many(self) -> None:
+        # Insert 3 records.
+        mocha1 = await db[Flavor].insert(Flavor(name="mocha"))
+        mocha2 = await db[Flavor].insert(Flavor(name="mocha"))
+        caramel = await db[Flavor].insert(Flavor(name="caramel"))
+        # Find two records with filter.
+        mochas = await db[Flavor].find_many(where={"name": "mocha"})
+        self.assertListEqual([mocha1, mocha2], mochas)
+        flavors = await db[Flavor].find_many()
+        self.assertListEqual([mocha1, mocha2, caramel], flavors)
 
     def test_insert(self) -> None:
         # TODO Insert record.

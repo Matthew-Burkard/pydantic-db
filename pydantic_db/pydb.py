@@ -54,10 +54,10 @@ class _PyDB(Generic[ModelType]):
         return type(
             self._pydantic_model.__name__,  # type: ignore
             (Model,),
-            self._get_tortoise_fields(),
+            self._get_fields(),
         )  # type: ignore
 
-    def _get_tortoise_fields(self) -> dict[str, Any]:
+    def _get_fields(self) -> dict[str, Any]:
         columns = {}
         for k, v in self._pydantic_model.__fields__.items():
             pk = v.field_info.extra.get("pk") or False
@@ -112,6 +112,10 @@ class PyDB:
             return cls
 
         return _wrapper
+
+    async def generate_schemas(self) -> None:
+        """Generate database tables from PyDB models."""
+        pass
 
 
 class Column(BaseModel):
