@@ -1,14 +1,12 @@
 """PyDB tests."""
-import asyncio
 import unittest
-from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
-# noinspection PyPackageRequirements
-from tortoise import Tortoise
 
-from pydantic_db.pydb import Column, PyDB
+from pydantic_db.pydb import PyDBColumn, PyDB
+
+# noinspection PyPackageRequirements
 
 db = PyDB()
 db_url = "sqlite://db.sqlite3"
@@ -18,7 +16,7 @@ db_url = "sqlite://db.sqlite3"
 class Flavor(BaseModel):
     """A coffee flavor."""
 
-    id: UUID = Field(default_factory=uuid4, **Column(pk=True).dict())
+    id: UUID = Field(default_factory=uuid4, **PyDBColumn(pk=True).dict())
     name: str = Field(max_length=63)
 
 
@@ -26,7 +24,7 @@ class Flavor(BaseModel):
 class Coffee(BaseModel):
     """Drink it in the morning."""
 
-    id: UUID = Field(default_factory=uuid4, **Column(pk=True).dict())
+    id: UUID = Field(default_factory=uuid4, **PyDBColumn(pk=True).dict())
     flavor: Flavor
 
 

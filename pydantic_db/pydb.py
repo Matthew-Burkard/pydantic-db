@@ -1,16 +1,16 @@
 """Module providing PyDB and Column classes."""
 import uuid
 from typing import Any, Callable, Generic, Type, TypeVar
-from uuid import UUID
 
 import caseswitcher
 from pydantic import BaseModel
-
-# noinspection PyPackageRequirements
-from tortoise import fields, Model
+from sqlalchemy import Column, Float, Integer, JSON, String, Table
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declarative_base
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
-DBModelType = TypeVar("DBModelType", bound=Model)
+DBModelType = TypeVar("DBModelType", bound=Table)
+Base = declarative_base()
 
 
 class _PyDB(Generic[ModelType]):
@@ -27,7 +27,7 @@ class _PyDB(Generic[ModelType]):
         self._tablename = tablename
         self.table: Type[DBModelType] = self._generate_db_model()  # type: ignore
 
-    async def find_one(self, pk: UUID) -> ModelType:
+    async def find_one(self, pk: uuid.UUID) -> ModelType:
         """Get one record."""
 
     async def find_many(
@@ -46,14 +46,14 @@ class _PyDB(Generic[ModelType]):
     async def upsert(self, model_instance: ModelType) -> ModelType:
         """Insert or update a record."""
 
-    async def delete(self, pk: UUID) -> bool:
+    async def delete(self, pk: uuid.UUID) -> bool:
         """Delete a record."""
 
     def _generate_db_model(self) -> Type[DBModelType]:
         # noinspection PyTypeChecker
         return type(
             self._pydantic_model.__name__,  # type: ignore
-            (Model,),
+            (Base,),
             self._get_fields(),
         )  # type: ignore
 
@@ -63,25 +63,20 @@ class _PyDB(Generic[ModelType]):
             pk = v.field_info.extra.get("pk") or False
             if issubclass(v.type_, BaseModel):
                 foreign_table = self._pydb.get(v.type_)
-                columns[k] = (
-                    fields.ForeignKeyField(
-                        f"models.{foreign_table._tablename}", foreign_table._tablename
-                    )
-                    if foreign_table
-                    else fields.JSONField(pk=pk)
-                )
+                columns[k] = Column if foreign_table else Column(JSON)
             elif v.type_ is uuid.UUID:
-                columns[k] = fields.UUIDField(pk=pk)
+                # TODO String if not postgres.
+                columns[k] = Column(UUID, primary_key=pk)
             elif v.type_ is str:
-                columns[k] = fields.CharField(pk=pk, max_length=v.field_info.max_length)
+                columns[k] = Column(String(v.field_info.max_length), primary_key=pk)
             elif v.type_ is int:
-                columns[k] = fields.IntField(pk=pk)
+                columns[k] = Column(Integer, primary_key=pk)
             elif v.type_ is float:
-                columns[k] = fields.FloatField(pk=pk)
+                columns[k] = Column(Float, primary_key=pk)
             elif v.type_ is dict:
-                columns[k] = fields.JSONField(pk=pk)
+                columns[k] = Column(JSON, primary_key=pk)
             elif v.type_ is list:
-                columns[k] = fields.JSONField(pk=pk)  # TODO Many to many?
+                columns[k] = Column(JSON, primary_key=pk)
         return columns
 
 
@@ -118,7 +113,7 @@ class PyDB:
         pass
 
 
-class Column(BaseModel):
+class PyDBColumn(BaseModel):
     """A pydantic-db table column."""
 
     pk: bool = False
