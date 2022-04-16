@@ -3,12 +3,12 @@ import unittest
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import create_async_engine
 
-from pydantic_db.pydb import PyDBColumn, PyDB
+from pydantic_db.pydb import PyDB, PyDBColumn
 
-# noinspection PyPackageRequirements
-
-db = PyDB()
+engine = create_async_engine("sqlite:///database.db")
+db = PyDB(engine)
 db_url = "sqlite://db.sqlite3"
 
 
@@ -30,7 +30,7 @@ class Coffee(BaseModel):
 
 class PyDBTests(unittest.TestCase):
     async def test_create_tables(self) -> None:
-        await db.generate_schemas()
+        db.generate_schemas()
         self.assertEqual(["coffee", "flavor"], ["coffee", "flavor"])
 
     async def test_find_one(self) -> None:
