@@ -1,6 +1,5 @@
 """Module providing PyDB and Column classes."""
 import uuid
-from enum import Enum
 from typing import Any, Callable, Generic, Type, TypeVar
 
 import caseswitcher
@@ -21,13 +20,6 @@ class Result(GenericModel, Generic[ModelType]):
     offset: int
     limit: int
     data: list[ModelType]
-
-
-class Order(Enum):
-    """Search order."""
-
-    ASC = "asc"
-    DESC = "desc"
 
 
 class _PyDB(Generic[ModelType]):
@@ -56,16 +48,12 @@ class _PyDB(Generic[ModelType]):
         async with async_session() as session:
             stmt = select(self.table).where(self.table.id == pk)  # type: ignore
             result = next(await session.execute(stmt))[0]
-            # noinspection PyCallingNonCallable
-            return self._pydantic_model(  # type: ignore
-                **{k: result.__dict__[k] for k in self._pydantic_model.__fields__}
-            )
+            return self._model_from_db(result)
 
-    # TODO Take filter object and return paginated result.
     async def find_many(
         self,
         where: dict[str, Any] | None = None,
-        order: Order = Order.ASC,
+        order_by: list[str] | None = None,
         limit: int = 0,
         offset: int = 0,
     ) -> Result[ModelType]:
@@ -73,14 +61,23 @@ class _PyDB(Generic[ModelType]):
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
-        data = []
         async with async_session() as session:
-            rows = await session.execute(
-                select(self.table).where().offset(offset).limit(limit)  # type: ignore
+            order = (self.table.__dict__[col] for col in order_by) if order_by else ()
+            where = (
+                (self.table.__dict__[k] == v for k, v in where.items()) if where else ()
             )
-            for row in rows:
-                print(row)
-        return Result(offset=offset, limit=limit, data=data)
+            rows = await session.execute(
+                select(self.table)  # type: ignore
+                .where(*where)
+                .offset(offset)
+                .limit(limit or None)
+                .order_by(*order)
+            )
+        return Result(
+            offset=offset,
+            limit=limit,
+            data=[self._model_from_db(row[0]) for row in rows],
+        )
 
     async def insert(self, model_instance: ModelType) -> ModelType:
         """Insert a record."""
@@ -107,6 +104,12 @@ class _PyDB(Generic[ModelType]):
 
     async def delete(self, pk: uuid.UUID | int) -> bool:
         """Delete a record."""
+
+    def _model_from_db(self, data: Any) -> ModelType:
+        # noinspection PyCallingNonCallable
+        return self._pydantic_model(  # type: ignore
+            **{k: data.__dict__[k] for k in self._pydantic_model.__fields__}
+        )
 
     def _generate_db_model(self) -> Type[Table]:
         # noinspection PyTypeChecker
