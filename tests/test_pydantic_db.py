@@ -1,10 +1,11 @@
 """PyDB tests."""
 import unittest
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pydantic_db.pydb import PyDB, PyDBColumn
+from pydantic_db.pydb import PyDB
 
 engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
 db = PyDB(engine)
@@ -14,7 +15,7 @@ db = PyDB(engine)
 class Flavor(BaseModel):
     """A coffee flavor."""
 
-    id: int = Field(pk=True)
+    id: UUID = Field(default_factory=uuid4, pk=True)
     name: str = Field(max_length=63)
 
 
@@ -22,7 +23,7 @@ class Flavor(BaseModel):
 class Coffee(BaseModel):
     """Drink it in the morning."""
 
-    id: int = Field(**PyDBColumn(pk=True).dict())
+    id: UUID = Field(default_factory=uuid4, pk=True)
     flavor: Flavor
 
 
@@ -34,7 +35,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
     async def test_insert_and_find_one(self) -> None:
         # Insert record.
         await db.generate_schemas()
-        flavor = Flavor(id=314, name="mocha")
+        flavor = Flavor(name="mocha")
         mocha = await db[Flavor].insert(flavor)
         # Find new record and compare.
         self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)

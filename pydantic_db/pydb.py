@@ -1,17 +1,33 @@
 """Module providing PyDB and Column classes."""
 import uuid
+from enum import Enum
 from typing import Any, Callable, Generic, Type, TypeVar
 
 import caseswitcher
 from pydantic import BaseModel, ConstrainedStr
+from pydantic.generics import GenericModel
 from sqlalchemy import Column, Float, Integer, JSON, MetaData, select, String, Table
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import declarative_base, sessionmaker  # type: ignore
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
-DBModelType = TypeVar("DBModelType", bound=Table)
 Base = declarative_base()
+
+
+class Result(GenericModel, Generic[ModelType]):
+    """Search result object."""
+
+    offset: int
+    limit: int
+    data: list[ModelType]
+
+
+class Order(Enum):
+    """Search order."""
+
+    ASC = "asc"
+    DESC = "desc"
 
 
 class _PyDB(Generic[ModelType]):
@@ -28,24 +44,43 @@ class _PyDB(Generic[ModelType]):
         self._pydantic_model = pydantic_model
         self._tablename = tablename
         self._engine = engine
-        self.table: Type[DBModelType] = self._generate_db_model()  # type: ignore
+        self.table: Type[Table] = self._generate_db_model()
 
     async def find_one(self, pk: uuid.UUID | int) -> ModelType:
         """Get one record."""
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
+        if self._engine.name != "postgres" and isinstance(pk, uuid.UUID):
+            pk = str(pk)
         async with async_session() as session:
-            stmt = select(self.table).where(self.table.id == pk)
+            stmt = select(self.table).where(self.table.id == pk)  # type: ignore
             result = next(await session.execute(stmt))[0]
             # noinspection PyCallingNonCallable
-            return self._pydantic_model(
+            return self._pydantic_model(  # type: ignore
                 **{k: result.__dict__[k] for k in self._pydantic_model.__fields__}
             )
 
     # TODO Take filter object and return paginated result.
-    async def find_many(self) -> list[ModelType]:
+    async def find_many(
+        self,
+        where: dict[str, Any] | None = None,
+        order: Order = Order.ASC,
+        limit: int = 0,
+        offset: int = 0,
+    ) -> Result[ModelType]:
         """Get many records."""
+        async_session = sessionmaker(
+            self._engine, expire_on_commit=False, class_=AsyncSession
+        )
+        data = []
+        async with async_session() as session:
+            rows = await session.execute(
+                select(self.table).where().offset(offset).limit(limit)  # type: ignore
+            )
+            for row in rows:
+                print(row)
+        return Result(offset=offset, limit=limit, data=data)
 
     async def insert(self, model_instance: ModelType) -> ModelType:
         """Insert a record."""
@@ -54,7 +89,12 @@ class _PyDB(Generic[ModelType]):
         )
         async with async_session() as session:
             async with session.begin():
-                session.add(self.table(**model_instance.dict()))
+                data = model_instance.dict()
+                if self._engine.name != "postgres":
+                    for k, v in data.items():
+                        if isinstance(v, uuid.UUID):
+                            data[k] = str(v)
+                session.add(self.table(**data))  # type: ignore
             await session.commit()
         await self._engine.dispose()
         return model_instance
@@ -68,7 +108,7 @@ class _PyDB(Generic[ModelType]):
     async def delete(self, pk: uuid.UUID | int) -> bool:
         """Delete a record."""
 
-    def _generate_db_model(self) -> Type[DBModelType]:
+    def _generate_db_model(self) -> Type[Table]:
         # noinspection PyTypeChecker
         return type(
             self._pydantic_model.__name__,  # type: ignore
@@ -77,15 +117,15 @@ class _PyDB(Generic[ModelType]):
         )
 
     def _get_fields(self) -> dict[str, Any]:
-        fields = {"__tablename__": self._tablename}
+        fields: dict[str, Any] = {"__tablename__": self._tablename}
         for k, v in self._pydantic_model.__fields__.items():
             pk = v.field_info.extra.get("pk") or False
             if issubclass(v.type_, BaseModel):
                 foreign_table = self._pydb.get(v.type_)
                 fields[k] = Column if foreign_table else Column(JSON)
             elif v.type_ is uuid.UUID:
-                # TODO String if not postgres.
-                fields[k] = Column(UUID, primary_key=pk)
+                col_type = UUID if self._engine.name == "postgres" else String(36)
+                fields[k] = Column(col_type, primary_key=pk)
             elif v.type_ is str or issubclass(v.type_, ConstrainedStr):
                 fields[k] = Column(String(v.field_info.max_length), primary_key=pk)
             elif v.type_ is int:
