@@ -3,11 +3,11 @@ import uuid
 from typing import Any, Callable, Generic, Type, TypeVar
 
 import caseswitcher
-from pydantic import BaseModel
-from sqlalchemy import Column, Float, Integer, JSON, MetaData, String, Table
+from pydantic import BaseModel, ConstrainedStr
+from sqlalchemy import Column, Float, Integer, JSON, MetaData, select, String, Table
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
-from sqlalchemy.orm import declarative_base  # type: ignore
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
+from sqlalchemy.orm import declarative_base, sessionmaker  # type: ignore
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
 DBModelType = TypeVar("DBModelType", bound=Table)
@@ -30,23 +30,34 @@ class _PyDB(Generic[ModelType]):
         self._engine = engine
         self.table: Type[DBModelType] = self._generate_db_model()  # type: ignore
 
-    async def find_one(self, pk: uuid.UUID) -> ModelType:
+    async def find_one(self, pk: uuid.UUID | int) -> ModelType:
         """Get one record."""
+        async_session = sessionmaker(
+            self._engine, expire_on_commit=False, class_=AsyncSession
+        )
+        async with async_session() as session:
+            stmt = select(self.table).where(self.table.id == pk)
+            result = next(await session.execute(stmt))[0]
+            # noinspection PyCallingNonCallable
+            return self._pydantic_model(
+                **{k: result.__dict__[k] for k in self._pydantic_model.__fields__}
+            )
 
-    async def find_many(
-        self,
-        where: dict[str, Any] | None = None,
-        like: dict[str, Any] | None = None,
-    ) -> list[ModelType]:
+    # TODO Take filter object and return paginated result.
+    async def find_many(self) -> list[ModelType]:
         """Get many records."""
 
     async def insert(self, model_instance: ModelType) -> ModelType:
         """Insert a record."""
-        async with self._engine.begin() as conn:
-            pk = await conn.execute(self.table, [model_instance.dict()])
-            saved_instance = await self.find_one(pk)
+        async_session = sessionmaker(
+            self._engine, expire_on_commit=False, class_=AsyncSession
+        )
+        async with async_session() as session:
+            async with session.begin():
+                session.add(self.table(**model_instance.dict()))
+            await session.commit()
         await self._engine.dispose()
-        return saved_instance
+        return model_instance
 
     async def update(self, model_instance: ModelType) -> ModelType:
         """Update a record."""
@@ -54,7 +65,7 @@ class _PyDB(Generic[ModelType]):
     async def upsert(self, model_instance: ModelType) -> ModelType:
         """Insert or update a record."""
 
-    async def delete(self, pk: uuid.UUID) -> bool:
+    async def delete(self, pk: uuid.UUID | int) -> bool:
         """Delete a record."""
 
     def _generate_db_model(self) -> Type[DBModelType]:
@@ -75,7 +86,7 @@ class _PyDB(Generic[ModelType]):
             elif v.type_ is uuid.UUID:
                 # TODO String if not postgres.
                 fields[k] = Column(UUID, primary_key=pk)
-            elif v.type_ is str:
+            elif v.type_ is str or issubclass(v.type_, ConstrainedStr):
                 fields[k] = Column(String(v.field_info.max_length), primary_key=pk)
             elif v.type_ is int:
                 fields[k] = Column(Integer, primary_key=pk)
@@ -113,15 +124,18 @@ class PyDB:
                 self,
                 cls,
                 tablename or caseswitcher.to_snake(cls.__name__),
-                self._engine
+                self._engine,
             )
             return cls
 
         return _wrapper
 
-    def generate_schemas(self) -> None:
+    async def generate_schemas(self) -> None:
         """Generate database tables from PyDB models."""
-        self._metadata.create_all(self._engine)
+        async with self._engine.begin() as conn:
+            # TODO Remove drop_all
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
 
 
 class PyDBColumn(BaseModel):
