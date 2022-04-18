@@ -5,13 +5,24 @@ from typing import Any, Callable, Generic, Type, TypeVar
 import caseswitcher
 from pydantic import BaseModel, ConstrainedStr
 from pydantic.generics import GenericModel
-from sqlalchemy import Column, Float, Integer, JSON, MetaData, select, String, Table
+from sqlalchemy import (
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    MetaData,
+    String,
+    Table,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import declarative_base, sessionmaker  # type: ignore
+from sqlalchemy.sql import Select
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
 Base = declarative_base()
+metadata = MetaData()
 
 
 class Result(GenericModel, Generic[ModelType]):
@@ -36,19 +47,18 @@ class _PyDB(Generic[ModelType]):
         self._pydantic_model = pydantic_model
         self._tablename = tablename
         self._engine = engine
-        self.table: Type[Table] = self._generate_db_model()
+        self.table: Table = self._generate_db_model()
 
     async def find_one(self, pk: uuid.UUID | int) -> ModelType:
         """Get one record."""
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
-        if self._engine.name != "postgres" and isinstance(pk, uuid.UUID):
-            pk = str(pk)
         async with async_session() as session:
-            stmt = select(self.table).where(self.table.id == pk)  # type: ignore
-            result = next(await session.execute(stmt))[0]
-            return self._model_from_db(result)
+            query = self.table.select().where(self.table.c.id == self._pk(pk))
+            rows = await session.execute(query)
+            result = next(rows)
+            return self._model_from_db(result, query)
 
     async def find_many(
         self,
@@ -62,21 +72,24 @@ class _PyDB(Generic[ModelType]):
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
         async with async_session() as session:
-            order = (self.table.__dict__[col] for col in order_by) if order_by else ()
+            order = (self.table.c.get(col) for col in order_by) if order_by else ()
             where = (
-                (self.table.__dict__[k] == v for k, v in where.items()) if where else ()
+                (self.table.c.get(k) == v for k, v in where.items())
+                if where
+                else (True,)  # type: ignore
             )
-            rows = await session.execute(
-                select(self.table)  # type: ignore
+            query = (
+                self.table.select()
                 .where(*where)
                 .offset(offset)
                 .limit(limit or None)
                 .order_by(*order)
             )
+            rows = await session.execute(query)
         return Result(
             offset=offset,
             limit=limit,
-            data=[self._model_from_db(row[0]) for row in rows],
+            data=[self._model_from_db(row, query) for row in rows],
         )
 
     async def insert(self, model_instance: ModelType) -> ModelType:
@@ -86,18 +99,30 @@ class _PyDB(Generic[ModelType]):
         )
         async with async_session() as session:
             async with session.begin():
-                data = model_instance.dict()
-                if self._engine.name != "postgres":
-                    for k, v in data.items():
-                        if isinstance(v, uuid.UUID):
-                            data[k] = str(v)
-                session.add(self.table(**data))  # type: ignore
+                await session.execute(
+                    self.table.insert().values(
+                        **self._model_instance_data(model_instance)
+                    )
+                )
             await session.commit()
         await self._engine.dispose()
         return model_instance
 
     async def update(self, model_instance: ModelType) -> ModelType:
         """Update a record."""
+        async_session = sessionmaker(
+            self._engine, expire_on_commit=False, class_=AsyncSession
+        )
+        async with async_session() as session:
+            async with session.begin():
+                await session.execute(
+                    self.table.update()
+                    .where(self.table.c.id == self._pk(model_instance.id))
+                    .values(**self._model_instance_data(model_instance))
+                )
+            await session.commit()
+        await self._engine.dispose()
+        return model_instance
 
     async def upsert(self, model_instance: ModelType) -> ModelType:
         """Insert or update a record."""
@@ -105,48 +130,62 @@ class _PyDB(Generic[ModelType]):
     async def delete(self, pk: uuid.UUID | int) -> bool:
         """Delete a record."""
 
-    def _model_from_db(self, data: Any) -> ModelType:
+    def _pk(self, pk: UUID | int) -> UUID | int:
+        if self._engine.name != "postgres" and isinstance(pk, uuid.UUID):
+            return str(pk)  # type: ignore
+        return pk
+
+    def _model_instance_data(self, model_instance: ModelType) -> dict[str, Any]:
+        data = model_instance.dict()
+        if self._engine.name != "postgres":
+            for k, v in data.items():
+                if isinstance(v, uuid.UUID):
+                    data[k] = str(v)
+        return data
+
+    def _model_from_db(self, data: Any, query: Select) -> ModelType:
         # noinspection PyCallingNonCallable
-        return self._pydantic_model(  # type: ignore
-            **{k: data.__dict__[k] for k in self._pydantic_model.__fields__}
+        return self._pydantic_model(
+            **{k: data[i] for i, k in enumerate(query.columns.keys())}
         )
 
-    def _generate_db_model(self) -> Type[Table]:
-        # noinspection PyTypeChecker
-        return type(
-            self._pydantic_model.__name__,  # type: ignore
-            (Base,),
-            self._get_fields(),
-        )
+    def _generate_db_model(self) -> Table:
+        return Table(self._tablename, metadata, *self._get_columns())
 
-    def _get_fields(self) -> dict[str, Any]:
-        fields: dict[str, Any] = {"__tablename__": self._tablename}
+    def _get_columns(self) -> tuple[Column[Any] | Column, ...]:
+        columns = []
         for k, v in self._pydantic_model.__fields__.items():
             pk = v.field_info.extra.get("pk") or False
             if issubclass(v.type_, BaseModel):
                 foreign_table = self._pydb.get(v.type_)
-                fields[k] = Column if foreign_table else Column(JSON)
+                columns.append(
+                    Column(k, ForeignKey(f"{foreign_table.table.name}.id"))
+                    if foreign_table
+                    else Column(k, JSON)
+                )
             elif v.type_ is uuid.UUID:
                 col_type = UUID if self._engine.name == "postgres" else String(36)
-                fields[k] = Column(col_type, primary_key=pk)
+                columns.append(Column(k, col_type, primary_key=pk))  # type: ignore
             elif v.type_ is str or issubclass(v.type_, ConstrainedStr):
-                fields[k] = Column(String(v.field_info.max_length), primary_key=pk)
+                columns.append(
+                    Column(k, String(v.field_info.max_length), primary_key=pk)
+                )
             elif v.type_ is int:
-                fields[k] = Column(Integer, primary_key=pk)
+                columns.append(Column(k, Integer, primary_key=pk))
             elif v.type_ is float:
-                fields[k] = Column(Float, primary_key=pk)
+                columns.append(Column(k, Float, primary_key=pk))
             elif v.type_ is dict:
-                fields[k] = Column(JSON, primary_key=pk)
+                columns.append(Column(k, JSON, primary_key=pk))
             elif v.type_ is list:
-                fields[k] = Column(JSON, primary_key=pk)
-        return fields
+                columns.append(Column(k, JSON, primary_key=pk))
+        return tuple(columns)
 
 
 class PyDB:
     """Class to use pydantic models as ORM models."""
 
     def __init__(self, engine: AsyncEngine) -> None:
-        self._tables: dict[ModelType, _PyDB[ModelType]] = {}  # type: ignore
+        self._tables: dict[Type[ModelType], _PyDB[ModelType]] = {}  # type: ignore
         self._metadata = MetaData()
         self._engine = engine
 
@@ -177,8 +216,8 @@ class PyDB:
         """Generate database tables from PyDB models."""
         async with self._engine.begin() as conn:
             # TODO Remove drop_all
-            await conn.run_sync(Base.metadata.drop_all)
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(metadata.drop_all)
+            await conn.run_sync(metadata.create_all)
 
 
 class PyDBColumn(BaseModel):

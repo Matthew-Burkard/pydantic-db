@@ -50,27 +50,30 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         self.assertListEqual([mocha1, mocha2], mochas.data)
         flavors = await db[Flavor].find_many()
         self.assertListEqual([mocha1, mocha2, caramel], flavors.data)
-    #
-    # def test_update(self) -> None:
-    #     # TODO Insert record.
-    #     # TODO update record.
-    #     # TODO Find one record.
-    #     self.assertEqual("", "")
-    #
-    # def test_upsert(self) -> None:
-    #     # TODO Insert record.
-    #     # TODO upsert record.
-    #     # TODO Find one record.
-    #     self.assertEqual("", "")
-    #     # TODO upsert new record.
-    #     # TODO Find one record.
-    #     self.assertEqual("", "")
-    #
-    # def test_delete(self) -> None:
-    #     # TODO Insert record.
-    #     # TODO Delete record.
-    #     # TODO Find one record.
-    #     self.assertEqual(None, None)
+
+    async def test_update(self) -> None:
+        # Insert record.
+        flavor = await db[Flavor].insert(Flavor(name="mocha"))
+        # Update record.
+        flavor.name = "caramel"
+        await db[Flavor].update(flavor)
+        # Find the updated record.
+        self.assertEqual(flavor.name, (await db[Flavor].find_one(flavor.id)).name)
+
+    async def test_upsert(self) -> None:
+        # TODO Insert record.
+        # TODO upsert record.
+        # TODO Find one record.
+        self.assertEqual("", "")
+        # TODO upsert new record.
+        # TODO Find one record.
+        self.assertEqual("", "")
+
+    async def test_delete(self) -> None:
+        # TODO Insert record.
+        # TODO Delete record.
+        # TODO Find one record.
+        self.assertEqual(None, None)
 
 
 class ORMPyDBTests(unittest.TestCase):
