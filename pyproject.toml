@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pydantic-db"
-version = "0.11.0"
+version = "0.11.1"
 description = ""
 authors = ["Matthew Burkard <matthewjburkard@gmail.com>"]
 
@@ -14,7 +14,6 @@ SQLAlchemy = {extras = ["asyncio"], version = "^1.4.35"}
 pytest = "^7.1.1"
 mypy = "^0.942"
 coverage = "^6.3.2"
-sqlalchemy-stubs = "^0.4"
 aiosqlite = "^0.17.0"
 
 [build-system]

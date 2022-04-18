@@ -5,7 +5,7 @@ from typing import Any, Callable, Generic, Type, TypeVar
 import caseswitcher
 from pydantic import BaseModel, ConstrainedStr
 from pydantic.generics import GenericModel
-from sqlalchemy import (
+from sqlalchemy import (  # type: ignore
     Column,
     Float,
     ForeignKey,
@@ -15,10 +15,10 @@ from sqlalchemy import (
     String,
     Table,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import declarative_base, sessionmaker  # type: ignore
-from sqlalchemy.sql import Select
+from sqlalchemy.sql import Select  # type: ignore
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
 Base = declarative_base()
@@ -56,9 +56,9 @@ class _PyDB(Generic[ModelType]):
         )
         async with async_session() as session:
             query = self.table.select().where(self.table.c.id == self._pk(pk))
-            rows = await session.execute(query)
-            result = next(rows)
-            return self._model_from_db(result, query)
+            result = self._model_from_db(next(await session.execute(query)), query)
+        await self._engine.dispose()
+        return result
 
     async def find_many(
         self,
@@ -86,6 +86,7 @@ class _PyDB(Generic[ModelType]):
                 .order_by(*order)
             )
             rows = await session.execute(query)
+        await self._engine.dispose()
         return Result(
             offset=offset,
             limit=limit,
@@ -117,7 +118,9 @@ class _PyDB(Generic[ModelType]):
             async with session.begin():
                 await session.execute(
                     self.table.update()
-                    .where(self.table.c.id == self._pk(model_instance.id))
+                    .where(
+                        self.table.c.id == self._pk(model_instance.id)  # type: ignore
+                    )
                     .values(**self._model_instance_data(model_instance))
                 )
             await session.commit()
@@ -130,9 +133,9 @@ class _PyDB(Generic[ModelType]):
     async def delete(self, pk: uuid.UUID | int) -> bool:
         """Delete a record."""
 
-    def _pk(self, pk: UUID | int) -> UUID | int:
+    def _pk(self, pk: uuid.UUID | int) -> uuid.UUID | int | str:
         if self._engine.name != "postgres" and isinstance(pk, uuid.UUID):
-            return str(pk)  # type: ignore
+            return str(pk)
         return pk
 
     def _model_instance_data(self, model_instance: ModelType) -> dict[str, Any]:
@@ -145,7 +148,7 @@ class _PyDB(Generic[ModelType]):
 
     def _model_from_db(self, data: Any, query: Select) -> ModelType:
         # noinspection PyCallingNonCallable
-        return self._pydantic_model(
+        return self._pydantic_model(  # type: ignore
             **{k: data[i] for i, k in enumerate(query.columns.keys())}
         )
 
@@ -165,7 +168,7 @@ class _PyDB(Generic[ModelType]):
                 )
             elif v.type_ is uuid.UUID:
                 col_type = UUID if self._engine.name == "postgres" else String(36)
-                columns.append(Column(k, col_type, primary_key=pk))  # type: ignore
+                columns.append(Column(k, col_type, primary_key=pk))
             elif v.type_ is str or issubclass(v.type_, ConstrainedStr):
                 columns.append(
                     Column(k, String(v.field_info.max_length), primary_key=pk)
