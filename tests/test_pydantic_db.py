@@ -2,10 +2,10 @@
 import unittest
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pydantic_db.pydb import PyDB
+from pydantic_db.pydb import Field, PyDB
 
 engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
 db = PyDB(engine)
@@ -25,12 +25,20 @@ class Coffee(BaseModel):
 
     id: UUID = Field(default_factory=uuid4, pk=True)
     flavor: Flavor
+    sweetener: str
+    cream: float
+    size: int
+    place: dict
+    ice: list
 
 
 class PyDBTests(unittest.IsolatedAsyncioTestCase):
     async def test_create_tables(self) -> None:
         await db.generate_schemas()
         self.assertEqual(["coffee", "flavor"], ["coffee", "flavor"])
+
+    async def test_find_nothing(self) -> None:
+        self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
 
     async def test_insert_and_find_one(self) -> None:
         # Insert record.
@@ -60,14 +68,21 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         # Find the updated record.
         self.assertEqual(flavor.name, (await db[Flavor].find_one(flavor.id)).name)
 
-    async def test_upsert(self) -> None:
-        # TODO Insert record.
-        # TODO upsert record.
-        # TODO Find one record.
-        self.assertEqual("", "")
-        # TODO upsert new record.
-        # TODO Find one record.
-        self.assertEqual("", "")
+    # async def test_upsert(self) -> None:
+    #     # Insert record.
+    #     flavor = await db[Flavor].insert(Flavor(name="vanilla"))
+    #     # upsert record.
+    #     await db[Flavor].upsert(flavor)
+    #     # Find all "vanilla" record.
+    #     vanillas = await db[Flavor].find_many(where={"id": flavor.id})
+    #     self.assertEqual(1, len(vanillas.data))
+    #     # Upsert as update.
+    #     flavor.name = "caramel"
+    #     await db[Flavor].upsert(flavor)
+    #     # Find one record.
+    #     vanillas = await db[Flavor].find_many(where={"id": flavor.id})
+    #     self.assertEqual(1, len(vanillas.data))
+    #     self.assertEqual("caramel", len(vanillas.data))
 
     async def test_delete(self) -> None:
         # TODO Insert record.
@@ -76,5 +91,16 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(None, None)
 
 
-class ORMPyDBTests(unittest.TestCase):
+class ORMPyDBTests(unittest.IsolatedAsyncioTestCase):
     pass
+    # async def test_insert_and_find_one(self) -> None:
+    #     # Insert record.
+    #     await db.generate_schemas()
+    #     flavor = Flavor(name="mocha")
+    #     await db[Flavor].insert(flavor)
+    #     coffee = Coffee(flavor=flavor)
+    #     await db[Coffee].insert(coffee)
+    #     # Find new record and compare.
+    #     self.assertDictEqual(
+    #         coffee.dict(), (await db[Coffee].find_one(coffee.id)).dict()
+    #     )

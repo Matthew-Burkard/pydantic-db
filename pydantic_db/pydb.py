@@ -52,14 +52,21 @@ class _PyDB(Generic[ModelType]):
         self._engine = engine
         self.table: Table = self._generate_db_model()
 
-    async def find_one(self, pk: uuid.UUID | int) -> ModelType:
-        """Get one record."""
+    async def find_one(self, pk: uuid.UUID | int) -> ModelType | None:
+        """Get one record.
+
+        :param pk: Primary key of the record to get.
+        :return: A model representing the record if it exists else None.
+        """
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
         async with async_session() as session:
             query = self.table.select().where(self.table.c.id == self._pk(pk))
-            result = self._model_from_db(next(await session.execute(query)), query)
+            try:
+                result = self._model_from_db(next(await session.execute(query)), query)
+            except StopIteration:
+                return None
         await self._engine.dispose()
         return result
 
@@ -79,7 +86,7 @@ class _PyDB(Generic[ModelType]):
             where = (
                 (self.table.c.get(k) == v for k, v in where.items())
                 if where
-                else (True,)  # type: ignore
+                else ()  # type: ignore
             )
             query = (
                 self.table.select()
