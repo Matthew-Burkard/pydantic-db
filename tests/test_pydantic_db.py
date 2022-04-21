@@ -17,6 +17,7 @@ class Flavor(BaseModel):
 
     id: UUID = Field(default_factory=uuid4, pk=True)
     name: str = Field(max_length=63)
+    strength: int | None = None
 
 
 @db.table()
@@ -27,14 +28,13 @@ class Coffee(BaseModel):
     flavor: Flavor
     sweetener: str
     cream: float
-    size: int
     place: dict
     ice: list
 
 
 class PyDBTests(unittest.IsolatedAsyncioTestCase):
     async def test_create_tables(self) -> None:
-        await db.generate_schemas()
+        await db.init()
         self.assertEqual(["coffee", "flavor"], ["coffee", "flavor"])
 
     async def test_find_nothing(self) -> None:
@@ -42,13 +42,22 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_insert_and_find_one(self) -> None:
         # Insert record.
-        await db.generate_schemas()
         flavor = Flavor(name="mocha")
         mocha = await db[Flavor].insert(flavor)
         # Find new record and compare.
         self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
 
+    async def test_exclude(self) -> None:
+        # Insert record.
+        flavor = Flavor(name="hazelnut", strength=1)
+        hazelnut = await db[Flavor].insert(flavor)
+        # Find new record and compare.
+        result = await db[Flavor].find_one(hazelnut.id, exclude=[Flavor.strength])
+        self.assertEqual(None, result.strength)
+
     async def test_find_many(self) -> None:
+        # Delete all flavors.
+        ...
         # Insert 3 records.
         mocha1 = await db[Flavor].insert(Flavor(name="mocha"))
         mocha2 = await db[Flavor].insert(Flavor(name="mocha"))

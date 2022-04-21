@@ -15,6 +15,7 @@ from sqlalchemy import (  # type: ignore
     Integer,
     JSON,
     MetaData,
+    select,
     String,
     Table,
 )
@@ -50,19 +51,30 @@ class _PyDB(Generic[ModelType]):
         self._pydantic_model = pydantic_model
         self._tablename = tablename
         self._engine = engine
-        self.table: Table = self._generate_db_model()
+        self._relations: dict[str, "_PyDB"] = {}
+        self._field_to_column: dict[Any, str] = {}
+        self.table: Table | None = None
 
-    async def find_one(self, pk: uuid.UUID | int) -> ModelType | None:
+    def init(self) -> None:
+        """Generate SQL Alchemy tables."""
+        self.table = self._generate_db_model()
+
+    async def find_one(
+        self, pk: uuid.UUID, exclude: list[Any] | None = None
+    ) -> ModelType | None:
         """Get one record.
 
         :param pk: Primary key of the record to get.
+        :param exclude: Columns to exclude from search.
         :return: A model representing the record if it exists else None.
         """
+        exclude = [self._field_to_column[f] for f in exclude or []]
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
+        columns = (v for k, v in self.table.c.items() if k not in exclude)
         async with async_session() as session:
-            query = self.table.select().where(self.table.c.id == self._pk(pk))
+            query = select(*columns).where(self.table.c.id == self._pk(pk))
             try:
                 result = self._model_from_db(next(await session.execute(query)), query)
             except StopIteration:
@@ -76,8 +88,20 @@ class _PyDB(Generic[ModelType]):
         order_by: list[str] | None = None,
         limit: int = 0,
         offset: int = 0,
+        exclude: list[Any] | None = None,
+        depth: int | None = None,
     ) -> Result[ModelType]:
-        """Get many records."""
+        """Get many records.
+
+        :param where: Dictionary of column name to desired value.
+        :param order_by: Columns to order by.
+        :param limit: Number of records to return.
+        :param offset: Number of records to offset by.
+        :param exclude: Columns to exclude.
+        :param depth: Depth of relations to populate.
+        :return: A list of models representing table records.
+        """
+        exclude = exclude or []
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
@@ -88,8 +112,9 @@ class _PyDB(Generic[ModelType]):
                 if where
                 else ()  # type: ignore
             )
+            columns = (v for k, v in self.table.c.items() if k not in exclude)
             query = (
-                self.table.select()
+                select(*columns)
                 .where(*where)
                 .offset(offset)
                 .limit(limit or None)
@@ -104,7 +129,11 @@ class _PyDB(Generic[ModelType]):
         )
 
     async def insert(self, model_instance: ModelType) -> ModelType:
-        """Insert a record."""
+        """Insert a record.
+
+        :param model_instance: Instance to save as database record.
+        :return: Inserted model.
+        """
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
@@ -120,7 +149,11 @@ class _PyDB(Generic[ModelType]):
         return model_instance
 
     async def update(self, model_instance: ModelType) -> ModelType:
-        """Update a record."""
+        """Update a record.
+
+        :param model_instance: Model representing record to update.
+        :return: The updated model.
+        """
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
@@ -140,10 +173,10 @@ class _PyDB(Generic[ModelType]):
     async def upsert(self, model_instance: ModelType) -> ModelType:
         """Insert or update a record."""
 
-    async def delete(self, pk: uuid.UUID | int) -> bool:
+    async def delete(self, pk: uuid.UUID) -> bool:
         """Delete a record."""
 
-    def _pk(self, pk: uuid.UUID | int) -> uuid.UUID | int | str:
+    def _pk(self, pk: uuid.UUID) -> uuid.UUID | str:
         if self._engine.name != "postgres" and isinstance(pk, uuid.UUID):
             return str(pk)
         return pk
@@ -169,13 +202,16 @@ class _PyDB(Generic[ModelType]):
         columns = []
         for k, v in self._pydantic_model.__fields__.items():
             pk = v.field_info.extra.get("pk") or False
+            col_name = k
             if issubclass(v.type_, BaseModel):
                 foreign_table = self._pydb.get(v.type_)
-                columns.append(
-                    Column(k, ForeignKey(f"{foreign_table.table.name}.id"))
-                    if foreign_table
-                    else Column(k, JSON)
-                )
+                if foreign_table:
+                    col_name = f"{k}_id"
+                    columns.append(
+                        Column(col_name, ForeignKey(f"{foreign_table.table.name}.id"))
+                    )
+                else:
+                    columns.append(Column(k, JSON))
             elif v.type_ is uuid.UUID:
                 col_type = UUID if self._engine.name == "postgres" else String(36)
                 columns.append(Column(k, col_type, primary_key=pk))
@@ -191,6 +227,7 @@ class _PyDB(Generic[ModelType]):
                 columns.append(Column(k, JSON, primary_key=pk))
             elif v.type_ is list:
                 columns.append(Column(k, JSON, primary_key=pk))
+            self._field_to_column[v] = col_name
         return tuple(columns)
 
 
@@ -225,9 +262,11 @@ class PyDB:
 
         return _wrapper
 
-    async def generate_schemas(self) -> None:
+    async def init(self) -> None:
         """Generate database tables from PyDB models."""
         async with self._engine.begin() as conn:
+            for table in self._tables.values():
+                table.init()
             # TODO Remove drop_all
             await conn.run_sync(metadata.drop_all)
             await conn.run_sync(metadata.create_all)
