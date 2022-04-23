@@ -25,7 +25,8 @@ class Coffee(BaseModel):
     """Drink it in the morning."""
 
     id: UUID = Field(default_factory=uuid4, pk=True)
-    flavor: Flavor
+    primary_flavor: Flavor
+    secondary_flavor: Flavor
     sweetener: str
     cream: float
     place: dict
@@ -37,46 +38,46 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         await db.init()
         self.assertEqual(["coffee", "flavor"], ["coffee", "flavor"])
 
-    async def test_find_nothing(self) -> None:
-        self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
-
-    async def test_insert_and_find_one(self) -> None:
-        # Insert record.
-        flavor = Flavor(name="mocha")
-        mocha = await db[Flavor].insert(flavor)
-        # Find new record and compare.
-        self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
-
-    async def test_exclude(self) -> None:
-        # Insert record.
-        flavor = Flavor(name="hazelnut", strength=1)
-        hazelnut = await db[Flavor].insert(flavor)
-        # Find new record and compare.
-        result = await db[Flavor].find_one(hazelnut.id, exclude=[Flavor.strength])
-        self.assertEqual(None, result.strength)
-
-    async def test_find_many(self) -> None:
-        # Delete all flavors.
-        ...
-        # Insert 3 records.
-        mocha1 = await db[Flavor].insert(Flavor(name="mocha"))
-        mocha2 = await db[Flavor].insert(Flavor(name="mocha"))
-        caramel = await db[Flavor].insert(Flavor(name="caramel"))
-        # Find two records with filter.
-        mochas = await db[Flavor].find_many(where={"name": "mocha"})
-        self.assertListEqual([mocha1, mocha2], mochas.data)
-        flavors = await db[Flavor].find_many()
-        self.assertListEqual([mocha1, mocha2, caramel], flavors.data)
-
-    async def test_update(self) -> None:
-        # Insert record.
-        flavor = await db[Flavor].insert(Flavor(name="mocha"))
-        # Update record.
-        flavor.name = "caramel"
-        await db[Flavor].update(flavor)
-        # Find the updated record.
-        self.assertEqual(flavor.name, (await db[Flavor].find_one(flavor.id)).name)
-
+    # async def test_find_nothing(self) -> None:
+    #     self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
+    #
+    # async def test_insert_and_find_one(self) -> None:
+    #     # Insert record.
+    #     flavor = Flavor(name="mocha")
+    #     mocha = await db[Flavor].insert(flavor)
+    #     # Find new record and compare.
+    #     self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
+    #
+    # async def test_exclude(self) -> None:
+    #     # Insert record.
+    #     flavor = Flavor(name="hazelnut", strength=1)
+    #     hazelnut = await db[Flavor].insert(flavor)
+    #     # Find new record and compare.
+    #     result = await db[Flavor].find_one(hazelnut.id, exclude=[Flavor.strength])
+    #     self.assertEqual(None, result.strength)
+    #
+    # async def test_find_many(self) -> None:
+    #     # Delete all flavors.
+    #     ...
+    #     # Insert 3 records.
+    #     mocha1 = await db[Flavor].insert(Flavor(name="mocha"))
+    #     mocha2 = await db[Flavor].insert(Flavor(name="mocha"))
+    #     caramel = await db[Flavor].insert(Flavor(name="caramel"))
+    #     # Find two records with filter.
+    #     mochas = await db[Flavor].find_many(where={"name": "mocha"})
+    #     self.assertListEqual([mocha1, mocha2], mochas.data)
+    #     flavors = await db[Flavor].find_many()
+    #     self.assertListEqual([mocha1, mocha2, caramel], flavors.data)
+    #
+    # async def test_update(self) -> None:
+    #     # Insert record.
+    #     flavor = await db[Flavor].insert(Flavor(name="mocha"))
+    #     # Update record.
+    #     flavor.name = "caramel"
+    #     await db[Flavor].update(flavor)
+    #     # Find the updated record.
+    #     self.assertEqual(flavor.name, (await db[Flavor].find_one(flavor.id)).name)
+    #
     # async def test_upsert(self) -> None:
     #     # Insert record.
     #     flavor = await db[Flavor].insert(Flavor(name="vanilla"))
