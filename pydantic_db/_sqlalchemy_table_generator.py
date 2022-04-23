@@ -3,11 +3,20 @@ import uuid
 from typing import Any
 
 from pydantic import BaseModel, ConstrainedStr
-from sqlalchemy import Column, Float, ForeignKey, Integer, JSON, MetaData, String, Table
-from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy import (  # type: ignore
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    MetaData,
+    String,
+    Table,
+)
+from sqlalchemy.dialects import postgresql  # type: ignore
+from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
-from pydantic_db._model_type import ModelType
+from pydantic_db.models import ModelType
 
 metadata = MetaData()
 
@@ -29,7 +38,7 @@ class SQLAlchemyTableGenerator:
             await conn.run_sync(metadata.drop_all)
             await conn.run_sync(metadata.create_all)
 
-    def _generate_table(self, tablename: str, pydantic_model: BaseModel) -> None:
+    def _generate_table(self, tablename: str, pydantic_model: ModelType) -> None:
         self._tables[pydantic_model] = Table(
             tablename, metadata, *self._get_columns(pydantic_model)
         )
@@ -43,9 +52,7 @@ class SQLAlchemyTableGenerator:
             if issubclass(v.type_, BaseModel):
                 if v.type_ in self._schema.values():
                     foreign_table = self._tablename_from_model(v.type_)
-                    columns.append(
-                        Column(f"{k}_id", ForeignKey(f"{foreign_table}.id"))
-                    )
+                    columns.append(Column(f"{k}_id", ForeignKey(f"{foreign_table}.id")))
                 else:
                     columns.append(Column(k, JSON))
             elif v.type_ is uuid.UUID:
@@ -71,3 +78,4 @@ class SQLAlchemyTableGenerator:
         for tablename, v in self._schema.items():
             if v == model:
                 return tablename
+        raise ValueError("Given model is not a table.")

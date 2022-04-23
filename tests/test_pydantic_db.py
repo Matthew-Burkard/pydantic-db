@@ -1,11 +1,10 @@
 """PyDB tests."""
 import unittest
-from uuid import UUID, uuid4
 
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pydantic_db.pydb import Field, PyDB
+from pydantic_db.models import BaseModel, Field
+from pydantic_db.pydb import PyDB
 
 engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
 db = PyDB(engine)
@@ -15,7 +14,6 @@ db = PyDB(engine)
 class Flavor(BaseModel):
     """A coffee flavor."""
 
-    id: UUID = Field(default_factory=uuid4, pk=True)
     name: str = Field(max_length=63)
     strength: int | None = None
 
@@ -24,7 +22,6 @@ class Flavor(BaseModel):
 class Coffee(BaseModel):
     """Drink it in the morning."""
 
-    id: UUID = Field(default_factory=uuid4, pk=True)
     primary_flavor: Flavor
     secondary_flavor: Flavor
     sweetener: str

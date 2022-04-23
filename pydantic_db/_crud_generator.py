@@ -4,11 +4,12 @@ from typing import Any, Callable, Generic
 from uuid import UUID
 
 from pydantic.generics import GenericModel
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from pypika import Table  # type: ignore
+from sqlalchemy import text  # type: ignore
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
+from sqlalchemy.orm import sessionmaker  # type: ignore
 
-from pydantic_db._model_type import ModelType
+from pydantic_db.models import ModelType
 
 
 class Result(GenericModel, Generic[ModelType]):
@@ -40,6 +41,8 @@ class CRUDMethods(GenericModel, Generic[ModelType]):
     delete: Callable[[UUID], bool]
 
 
+# TODO Remove noinspection after methods are implemented.
+# noinspection PyUnusedLocal
 class CRUDGenerator(Generic[ModelType]):
     """Provides DB CRUD methods for a model type."""
 
@@ -50,6 +53,13 @@ class CRUDGenerator(Generic[ModelType]):
         engine: AsyncEngine,
         schema: dict[str, ModelType],
     ) -> None:
+        """Provides DB CRUD methods for a model type.
+
+        :param pydantic_model: Model to create CRUD methods for.
+        :param tablename: Name of the corresponding database table.
+        :param engine: A SQL Alchemy async engine.
+        :param schema: Map of all table names and models.
+        """
         self._pydantic_model = pydantic_model
         self._tablename = tablename
         self._engine = engine
@@ -136,10 +146,6 @@ class CRUDGenerator(Generic[ModelType]):
         statement = text("")
         await self._execute(statement)
         return True
-
-    def get_crud_methods(self) -> CRUDMethods:
-        """Get stand-alone CRUD methods for the model."""
-        pass
 
     async def _execute(self, statement: str) -> Any:
         async_session = sessionmaker(
