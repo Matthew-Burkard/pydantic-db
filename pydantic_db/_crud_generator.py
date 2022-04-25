@@ -163,24 +163,34 @@ class CRUDGenerator(Generic[ModelType]):
         return result
 
     def _build_query(
-        self, query: QueryBuilder, table: PyDBTable, depth: int, columns: list[Field]
+        self,
+        query: QueryBuilder,
+        table: PyDBTable,
+        depth: int | None,
+        columns: list[Field],
+        table_tree: str | None = None,
     ) -> tuple[QueryBuilder, list]:
         if depth and (relationships := self._schema[table.name].relationships):
             depth -= 1
+            table_tree = table_tree or table.name
+            pypika_table: Table = Table(table.name)
+            if table.name != table_tree:
+                pypika_table = pypika_table.as_(table_tree)
             # For each related table, add join to query.
             for field_name, tablename in relationships.items():
-                rel_table = Table(tablename).as_(field_name.removesuffix("_id"))
+                relation_name = f"{table_tree}/{field_name.removesuffix('_id')}"
+                rel_table = Table(tablename).as_(relation_name)
                 query = query.left_join(rel_table).on(
-                    Table(table.name).field(field_name) == rel_table.id
+                    pypika_table.field(field_name) == rel_table.id
                 )
                 columns.extend(
                     [rel_table.field(c) for c in self._schema[tablename].columns]
                 )
                 # Add joins of relations of this table to query.
                 query, new_cols = self._build_query(
-                    query, self._schema[tablename], depth, columns
+                    query, self._schema[tablename], depth, columns, relation_name
                 )
-                columns.extend(c for c in new_cols if c not in columns)
+                columns.extend([c for c in new_cols if c not in columns])
         return query, columns
 
     def _pk(self, pk: uuid.UUID) -> uuid.UUID | str:
