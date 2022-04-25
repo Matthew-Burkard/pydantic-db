@@ -4,11 +4,13 @@ from typing import Any, Callable, Generic
 from uuid import UUID
 
 from pydantic.generics import GenericModel
-from pypika import Table  # type: ignore
+from pypika import Query, Table  # type: ignore
+from pypika.queries import QueryBuilder
 from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
+from pydantic_db._table import PyDBTable
 from pydantic_db.models import ModelType
 
 
@@ -25,14 +27,7 @@ class CRUDMethods(GenericModel, Generic[ModelType]):
 
     find_one: Callable[[UUID], ModelType]
     find_many: Callable[
-        [
-            dict[str, Any] | None,
-            list[str] | None,
-            int,
-            int,
-            list[Any] | None,
-            int | None,
-        ],
+        [dict[str, Any] | None, list[str] | None, int, int, int | None],
         list[Result[ModelType]],
     ]
     insert: Callable[[ModelType], ModelType]
@@ -51,32 +46,44 @@ class CRUDGenerator(Generic[ModelType]):
         pydantic_model: ModelType,
         tablename: str,
         engine: AsyncEngine,
-        schema: dict[str, ModelType],
+        models: list[ModelType],
+        schema: dict[str, PyDBTable],
     ) -> None:
         """Provides DB CRUD methods for a model type.
 
         :param pydantic_model: Model to create CRUD methods for.
         :param tablename: Name of the corresponding database table.
         :param engine: A SQL Alchemy async engine.
-        :param schema: Map of all table names and models.
+        :param models: List of all models.
+        :param schema: Map of tablename to table information objects.
         """
         self._pydantic_model = pydantic_model
         self._tablename = tablename
+        self._table = Table(tablename)
         self._engine = engine
-        self._relations: dict[str, "CRUDGenerator"] = {}
-        self._field_to_column: dict[Any, str] = {}
         self._schema = schema
+        self._field_to_column: dict[Any, str] = {}
+        self._models = models
 
     async def find_one(
-        self, pk: uuid.UUID, exclude: list[Any] | None = None
+        self, pk: uuid.UUID, depth: int | None = None
     ) -> ModelType | None:
         """Get one record.
 
         :param pk: Primary key of the record to get.
-        :param exclude: Columns to exclude from search.
+        :param depth: ORM fetch depth.
         :return: A model representing the record if it exists else None.
         """
-        statement = text("")
+        pydb_table = self._schema[self._tablename]
+        query, columns = self._build_query(
+            Query.from_(self._table),
+            pydb_table,
+            depth,
+            [self._table.field(c) for c in pydb_table.columns],
+        )
+        statement = text(
+            str(query.where(self._table.id == self._pk(pk)).select(*columns))
+        )
         result = await self._execute(statement)
         return self._model_from_row(result)
 
@@ -86,7 +93,6 @@ class CRUDGenerator(Generic[ModelType]):
         order_by: list[str] | None = None,
         limit: int = 0,
         offset: int = 0,
-        exclude: list[Any] | None = None,
         depth: int | None = None,
     ) -> Result[ModelType]:
         """Get many records.
@@ -95,11 +101,9 @@ class CRUDGenerator(Generic[ModelType]):
         :param order_by: Columns to order by.
         :param limit: Number of records to return.
         :param offset: Number of records to offset by.
-        :param exclude: Columns to exclude.
         :param depth: Depth of relations to populate.
         :return: A list of models representing table records.
         """
-        exclude = exclude or []
         statement = text("")
         rows = await self._execute(statement)
         return Result(
@@ -158,6 +162,25 @@ class CRUDGenerator(Generic[ModelType]):
         await self._engine.dispose()
         return result
 
+    def _build_query(
+        self, query: QueryBuilder, table: PyDBTable, depth: int, columns: list
+    ) -> tuple[QueryBuilder, list]:
+        if depth:
+            depth -= 1
+            relationships = self._schema[table.name].relationships
+            for field_name, tablename in relationships.items():
+                rel_table = Table(tablename)
+                query = query.left_join(rel_table).on_field(field_name)
+                columns.extend(
+                    [rel_table.field(c) for c in self._schema[tablename].columns]
+                )
+                if depth:
+                    query, new_cols = self._build_query(
+                        query, self._schema[tablename], depth, columns
+                    )
+                    columns.extend(new_cols)
+        return query, columns
+
     def _pk(self, pk: uuid.UUID) -> uuid.UUID | str:
         if self._engine.name != "postgres" and isinstance(pk, uuid.UUID):
             return str(pk)
@@ -169,10 +192,11 @@ class CRUDGenerator(Generic[ModelType]):
             for k, v in data.items():
                 if isinstance(v, uuid.UUID):
                     data[k] = str(v)
-                if v in self._schema.values():
+                if v in self._models:
                     data[k] = self._pk(v.id)
         return data
 
     def _model_from_row(self, data: Any) -> ModelType:
-        # noinspection PyCallingNonCallable
-        return self._pydantic_model(**{k: data[i] for i, k in "TODO"})  # TODO
+        # # noinspection PyCallingNonCallable
+        # return self._pydantic_model(**{k: data[i] for i, k in "TODO"})  # TODO
+        return None

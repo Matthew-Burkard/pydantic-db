@@ -1,5 +1,6 @@
 """PyDB tests."""
 import unittest
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -33,18 +34,19 @@ class Coffee(BaseModel):
 class PyDBTests(unittest.IsolatedAsyncioTestCase):
     async def test_create_tables(self) -> None:
         await db.init()
+        # TODO Get all tables.
         self.assertEqual(["coffee", "flavor"], ["coffee", "flavor"])
 
-    # async def test_find_nothing(self) -> None:
-    #     self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
-    #
-    # async def test_insert_and_find_one(self) -> None:
-    #     # Insert record.
-    #     flavor = Flavor(name="mocha")
-    #     mocha = await db[Flavor].insert(flavor)
-    #     # Find new record and compare.
-    #     self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
-    #
+    async def test_find_nothing(self) -> None:
+        self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
+
+    async def test_insert_and_find_one(self) -> None:
+        # Insert record.
+        flavor = Flavor(name="mocha")
+        mocha = await db[Flavor].insert(flavor)
+        # Find new record and compare.
+        self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
+
     # async def test_exclude(self) -> None:
     #     # Insert record.
     #     flavor = Flavor(name="hazelnut", strength=1)
