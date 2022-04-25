@@ -39,6 +39,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_find_nothing(self) -> None:
         self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
+        self.assertEqual(None, (await db[Coffee].find_one(uuid4(), depth=3)))
 
     async def test_insert_and_find_one(self) -> None:
         # Insert record.

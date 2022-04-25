@@ -4,7 +4,7 @@ from typing import Any, Callable, Generic
 from uuid import UUID
 
 from pydantic.generics import GenericModel
-from pypika import Query, Table  # type: ignore
+from pypika import Field, Query, Table  # type: ignore
 from pypika.queries import QueryBuilder
 from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
@@ -163,22 +163,24 @@ class CRUDGenerator(Generic[ModelType]):
         return result
 
     def _build_query(
-        self, query: QueryBuilder, table: PyDBTable, depth: int, columns: list
+        self, query: QueryBuilder, table: PyDBTable, depth: int, columns: list[Field]
     ) -> tuple[QueryBuilder, list]:
-        if depth:
+        if depth and (relationships := self._schema[table.name].relationships):
             depth -= 1
-            relationships = self._schema[table.name].relationships
+            # For each related table, add join to query.
             for field_name, tablename in relationships.items():
-                rel_table = Table(tablename)
-                query = query.left_join(rel_table).on_field(field_name)
+                rel_table = Table(tablename).as_(field_name.removesuffix("_id"))
+                query = query.left_join(rel_table).on(
+                    Table(table.name).field(field_name) == rel_table.id
+                )
                 columns.extend(
                     [rel_table.field(c) for c in self._schema[tablename].columns]
                 )
-                if depth:
-                    query, new_cols = self._build_query(
-                        query, self._schema[tablename], depth, columns
-                    )
-                    columns.extend(new_cols)
+                # Add joins of relations of this table to query.
+                query, new_cols = self._build_query(
+                    query, self._schema[tablename], depth, columns
+                )
+                columns.extend(c for c in new_cols if c not in columns)
         return query, columns
 
     def _pk(self, pk: uuid.UUID) -> uuid.UUID | str:
