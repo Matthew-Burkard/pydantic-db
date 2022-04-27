@@ -60,8 +60,8 @@ class PyDB:
                 model,
                 tablename or caseswitcher.to_snake(model.__name__),
                 self._engine,
-                self._models.values(),  # type: ignore
-                self._schema
+                self._models,  # type: ignore
+                self._schema,
             )
         await SQLAlchemyTableGenerator(
             self._engine, self._models

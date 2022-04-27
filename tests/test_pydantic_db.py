@@ -1,4 +1,6 @@
 """PyDB tests."""
+from __future__ import annotations
+
 import unittest
 from uuid import uuid4
 
@@ -17,7 +19,7 @@ class Flavor(BaseModel):
 
     name: str = Field(max_length=63)
     strength: int | None = None
-    coffee: "Coffee"
+    coffee: Coffee | None = None
 
 
 @db.table()
@@ -45,12 +47,12 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
         self.assertEqual(None, (await db[Coffee].find_one(uuid4(), depth=3)))
 
-    # async def test_insert_and_find_one(self) -> None:
-    #     # Insert record.
-    #     flavor = Flavor(name="mocha")
-    #     mocha = await db[Flavor].insert(flavor)
-    #     # Find new record and compare.
-    #     self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
+    async def test_insert_and_find_one(self) -> None:
+        # Insert record.
+        flavor = Flavor(name="mocha")
+        mocha = await db[Flavor].insert(flavor)
+        # Find new record and compare.
+        self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
 
     # async def test_exclude(self) -> None:
     #     # Insert record.

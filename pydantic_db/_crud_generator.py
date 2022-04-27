@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
 from pydantic_db._table import PyDBTable
-from pydantic_db.models import ModelType
+from pydantic_db.models import BaseModel, ModelType
 
 
 class Result(GenericModel, Generic[ModelType]):
@@ -36,8 +36,6 @@ class CRUDMethods(GenericModel, Generic[ModelType]):
     delete: Callable[[UUID], bool]
 
 
-# TODO Remove noinspection after methods are implemented.
-# noinspection PyUnusedLocal
 class CRUDGenerator(Generic[ModelType]):
     """Provides DB CRUD methods for a model type."""
 
@@ -46,7 +44,7 @@ class CRUDGenerator(Generic[ModelType]):
         pydantic_model: ModelType,
         tablename: str,
         engine: AsyncEngine,
-        models: list[ModelType],
+        models: dict[str, ModelType],
         schema: dict[str, PyDBTable],
     ) -> None:
         """Provides DB CRUD methods for a model type.
@@ -75,14 +73,18 @@ class CRUDGenerator(Generic[ModelType]):
         :return: A model representing the record if it exists else None.
         """
         pydb_table = self._schema[self._tablename]
-        query, columns = self._build_query(
+        query, columns = self._build_joins(
             Query.from_(self._table),
             pydb_table,
             depth,
             [self._table.field(c) for c in pydb_table.columns],
         )
         statement = text(
-            str(query.where(self._table.id == self._pk(pk)).select(*columns))
+            str(
+                query.where(self._table.id == self._get_database_value(pk)).select(
+                    *columns
+                )
+            )
         )
         result = await self._execute(statement)
         return self._model_from_row(result)
@@ -104,12 +106,20 @@ class CRUDGenerator(Generic[ModelType]):
         :param depth: Depth of relations to populate.
         :return: A list of models representing table records.
         """
-        statement = text("")
-        rows = await self._execute(statement)
+        pydb_table = self._schema[self._tablename]
+        query, columns = self._build_joins(
+            Query.from_(self._table),
+            pydb_table,
+            depth,
+            [self._table.field(c) for c in pydb_table.columns],
+        )
+        query.limit(limit)
+        statement = text(str(query.where(*()).select(*columns)))
+        result = await self._execute(statement)
         return Result(
             offset=offset,
             limit=limit,
-            data=[self._model_from_row(row) for row in rows],
+            data=[self._model_from_row(row) for row in result],
         )
 
     async def insert(self, model_instance: ModelType) -> ModelType:
@@ -162,7 +172,7 @@ class CRUDGenerator(Generic[ModelType]):
         await self._engine.dispose()
         return result
 
-    def _build_query(
+    def _build_joins(
         self,
         query: QueryBuilder,
         table: PyDBTable,
@@ -187,16 +197,28 @@ class CRUDGenerator(Generic[ModelType]):
                     [rel_table.field(c) for c in self._schema[tablename].columns]
                 )
                 # Add joins of relations of this table to query.
-                query, new_cols = self._build_query(
+                query, new_cols = self._build_joins(
                     query, self._schema[tablename], depth, columns, relation_name
                 )
                 columns.extend([c for c in new_cols if c not in columns])
         return query, columns
 
-    def _pk(self, pk: uuid.UUID) -> uuid.UUID | str:
-        if self._engine.name != "postgres" and isinstance(pk, uuid.UUID):
-            return str(pk)
-        return pk
+    def _get_inserts(
+        self, model_instance: ModelType, inserts: list[str] | None = None
+    ) -> list[str]:
+        inserts = inserts or []
+        schema_info = self._schema[self._tablename_from_model(model_instance)]
+        insert = ""
+        for k, v in type(model_instance).__fields__.items():
+            if type(v) in self._models.values():
+                inserts.extend(self._get_inserts(model_instance.__dict__[k]))
+        # TODO Remember to keep proper order of inserts.
+        return inserts
+
+    def _get_database_value(self, value: Any) -> Any:
+        if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
+            return str(value)
+        return value
 
     def _model_instance_data(self, model_instance: ModelType) -> dict[str, Any]:
         data = model_instance.dict()
@@ -204,11 +226,14 @@ class CRUDGenerator(Generic[ModelType]):
             for k, v in data.items():
                 if isinstance(v, uuid.UUID):
                     data[k] = str(v)
-                if v in self._models:
-                    data[k] = self._pk(v.id)
+                if v in self._models.values():
+                    data[k] = self._get_database_value(v.id)
         return data
 
-    def _model_from_row(self, data: Any) -> ModelType:
+    def _model_from_row(self, data: Any) -> ModelType | None:
         # # noinspection PyCallingNonCallable
         # return self._pydantic_model(**{k: data[i] for i, k in "TODO"})  # TODO
         return None
+
+    def _tablename_from_model(self, model: BaseModel) -> str:
+        return [k for k, v in self._models.items() if isinstance(v, type(model))][0]
