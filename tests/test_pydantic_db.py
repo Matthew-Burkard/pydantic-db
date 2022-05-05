@@ -52,7 +52,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         flavor = Flavor(name="mocha")
         mocha = await db[Flavor].insert(flavor)
         # Find new record and compare.
-        self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
+        self.assertDictEqual(mocha.dict(), (await db[Flavor].find_one(mocha.id)).dict())
 
     # async def test_find_many(self) -> None:
     #     # Delete all flavors.
@@ -98,7 +98,6 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         # TODO Find one record.
         self.assertEqual(None, None)
 
-# class ORMPyDBTests(unittest.IsolatedAsyncioTestCase):
     async def test_insert_and_find_orm(self) -> None:
         # Insert record.
         mocha = Flavor(name="mocha")
