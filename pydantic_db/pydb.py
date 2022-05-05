@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
 from pydantic_db._crud_generator import CRUDGenerator
 from pydantic_db._sqlalchemy_table_generator import SQLAlchemyTableGenerator
-from pydantic_db._table import PyDBTable
+from pydantic_db._table import PyDBTableMeta
 from pydantic_db.models import ModelType
 
 
@@ -23,7 +23,7 @@ class PyDB:
             Type[ModelType], CRUDGenerator[ModelType]
         ] = {}
         self._models: dict[str, Type[ModelType]] = {}  # type: ignore
-        self._schema: dict[str, PyDBTable] = {}
+        self._schema: dict[str, PyDBTableMeta] = {}
         self._metadata = MetaData()
         self._engine = engine
 
@@ -54,11 +54,16 @@ class PyDB:
 
     async def init(self) -> None:
         """Generate database tables from PyDB models."""
+        # Populate schema.
+        self._schema = {
+            tablename: self._get_table(tablename, model)
+            for tablename, model in self._models.items()
+        }
         for tablename, model in self._models.items():
             # noinspection PyTypeChecker
             self._crud_generators[model] = CRUDGenerator(
                 model,
-                tablename or caseswitcher.to_snake(model.__name__),
+                tablename,
                 self._engine,
                 self._models,  # type: ignore
                 self._schema,
@@ -66,13 +71,8 @@ class PyDB:
         await SQLAlchemyTableGenerator(
             self._engine, self._models
         ).init()  # type: ignore
-        self._populate_schema()
 
-    def _populate_schema(self) -> None:
-        for tablename, model in self._models.items():
-            self._schema[tablename] = self._get_table(tablename, model)
-
-    def _get_table(self, tablename: str, model: ModelType) -> PyDBTable:
+    def _get_table(self, tablename: str, model: ModelType) -> PyDBTableMeta:
         columns = []
         relationships = {}
         for k, v in model.__fields__.items():
@@ -82,4 +82,6 @@ class PyDB:
                 relationships[f"{k}_id"] = name
             else:
                 columns.append(k)
-        return PyDBTable(name=tablename, columns=columns, relationships=relationships)
+        return PyDBTableMeta(
+            name=tablename, columns=columns, relationships=relationships
+        )

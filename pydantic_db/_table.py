@@ -2,7 +2,7 @@
 from pydantic import BaseModel
 
 
-class PyDBTable(BaseModel):
+class PyDBTableMeta(BaseModel):
     """Class to store table information."""
 
     name: str

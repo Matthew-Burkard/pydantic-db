@@ -12,7 +12,7 @@ from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
-from pydantic_db._table import PyDBTable
+from pydantic_db._table import PyDBTableMeta
 from pydantic_db.models import BaseModel, ModelType
 
 
@@ -47,7 +47,7 @@ class CRUDGenerator(Generic[ModelType]):
         tablename: str,
         engine: AsyncEngine,
         models: dict[str, ModelType],
-        schema: dict[str, PyDBTable],
+        schema: dict[str, PyDBTableMeta],
     ) -> None:
         """Provides DB CRUD methods for a model type.
 
@@ -132,7 +132,7 @@ class CRUDGenerator(Generic[ModelType]):
         :return: Inserted model.
         """
         inserts = self._get_inserts(model_instance)
-        print(inserts)
+        print(inserts)  # TODO Delete me.
         await self._execute_many((text(s) for s in inserts))
         return model_instance
 
@@ -200,7 +200,7 @@ class CRUDGenerator(Generic[ModelType]):
     def _build_joins(
         self,
         query: QueryBuilder,
-        table: PyDBTable,
+        table: PyDBTableMeta,
         depth: int | None,
         columns: list[Field],
         table_tree: str | None = None,
@@ -248,6 +248,9 @@ class CRUDGenerator(Generic[ModelType]):
         inserts.append(str(Query.into(self._table).columns(*columns).insert(*values)))
         return inserts
 
+    def _get_upserts(self) -> list[str]:
+        return [""] or [str(self)]
+
     def _py_type_to_sql(self, value: Any) -> Any:
         if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
             return str(value)
@@ -258,17 +261,24 @@ class CRUDGenerator(Generic[ModelType]):
         return value
 
     def _sql_type_to_py(self, model: BaseModel, column: str, row_mapping: dict) -> Any:
-        # Include row_mapping so the columns of child tables are present and may be used
-        #  for child model serialization.
+        if row_mapping[column] is None:
+            return None
+        # Include row_mapping so the columns of child tables are present
+        #  and may be used for child model serialization.
         schema_info = self._schema[self._tablename_from_model(model)]
-        # TODO.
-        return row_mapping[column]
+        if column in schema_info.relationships:
+            # TODO Manipulate row_mapping data into proper form.
+            pass
+        return model.__fields__[column].type_(row_mapping[column])
 
     def _model_from_row(self, row: Any) -> ModelType:
         py_type = {}
         # noinspection PyProtectedMember
-        for column, value in row._mapping.items():
-            py_type[column] = self._sql_type_to_py(self._pydantic_model, column, value)
+        row_mapping = row._mapping
+        for column, value in row_mapping.items():
+            py_type[column] = self._sql_type_to_py(
+                self._pydantic_model, column, row_mapping
+            )
         # noinspection PyCallingNonCallable
         return self._pydantic_model(**py_type)
 
