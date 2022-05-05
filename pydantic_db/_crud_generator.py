@@ -65,9 +65,7 @@ class CRUDGenerator(Generic[ModelType]):
         self._schema = schema
         self._field_to_column: dict[Any, str] = {}
 
-    async def find_one(
-        self, pk: uuid.UUID, depth: int | None = None
-    ) -> ModelType | None:
+    async def find_one(self, pk: uuid.UUID, depth: int = 0) -> ModelType | None:
         """Get one record.
 
         :param pk: Primary key of the record to get.
@@ -98,7 +96,7 @@ class CRUDGenerator(Generic[ModelType]):
         order_by: list[str] | None = None,
         limit: int = 0,
         offset: int = 0,
-        depth: int | None = None,
+        depth: int = 0,
     ) -> Result[ModelType]:
         """Get many records.
 
@@ -201,7 +199,7 @@ class CRUDGenerator(Generic[ModelType]):
         self,
         query: QueryBuilder,
         table: PyDBTableMeta,
-        depth: int | None,
+        depth: int,
         columns: list[Field],
         table_tree: str | None = None,
     ) -> tuple[QueryBuilder, list]:
