@@ -115,5 +115,5 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         await db[Coffee].insert(coffee)
         # Find new record and compare.
         self.assertDictEqual(
-            coffee.dict(), (await db[Coffee].find_one(coffee.id)).dict()
+            coffee.dict(), (await db[Coffee].find_one(coffee.id, depth=1)).dict()
         )
