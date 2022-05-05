@@ -1,11 +1,13 @@
 """Generate Python CRUD methods for a model."""
+import asyncio
+import json
 import uuid
-from typing import Any, Callable, Generic
+from typing import Any, Callable, Generic, Iterable
 from uuid import UUID
 
 from pydantic.generics import GenericModel
 from pypika import Field, Query, Table  # type: ignore
-from pypika.queries import QueryBuilder
+from pypika.queries import QueryBuilder  # type: ignore
 from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
@@ -59,9 +61,9 @@ class CRUDGenerator(Generic[ModelType]):
         self._tablename = tablename
         self._table = Table(tablename)
         self._engine = engine
+        self._models = models
         self._schema = schema
         self._field_to_column: dict[Any, str] = {}
-        self._models = models
 
     async def find_one(
         self, pk: uuid.UUID, depth: int | None = None
@@ -81,13 +83,14 @@ class CRUDGenerator(Generic[ModelType]):
         )
         statement = text(
             str(
-                query.where(self._table.id == self._get_database_value(pk)).select(
-                    *columns
-                )
+                query.where(self._table.id == self._py_type_to_sql(pk)).select(*columns)
             )
         )
         result = await self._execute(statement)
-        return self._model_from_row(result)
+        try:
+            return self._model_from_row(next(result))
+        except StopIteration:
+            return None
 
     async def find_many(
         self,
@@ -128,8 +131,9 @@ class CRUDGenerator(Generic[ModelType]):
         :param model_instance: Instance to save as database record.
         :return: Inserted model.
         """
-        statement = text("")
-        await self._execute(statement)
+        inserts = self._get_inserts(model_instance)
+        print(inserts)
+        await self._execute_many((text(s) for s in inserts))
         return model_instance
 
     async def update(self, model_instance: ModelType) -> ModelType:
@@ -172,6 +176,27 @@ class CRUDGenerator(Generic[ModelType]):
         await self._engine.dispose()
         return result
 
+    async def _execute_many(
+        self, statements: Iterable[str]
+    ) -> tuple[
+        BaseException | Any,
+        BaseException | Any,
+        BaseException | Any,
+        BaseException | Any,
+        BaseException | Any,
+    ]:
+        async_session = sessionmaker(
+            self._engine, expire_on_commit=False, class_=AsyncSession
+        )
+        async with async_session() as session:
+            async with session.begin():
+                results = await asyncio.gather(
+                    *(session.execute(s) for s in statements)
+                )
+            await session.commit()
+        await self._engine.dispose()
+        return results
+
     def _build_joins(
         self,
         query: QueryBuilder,
@@ -207,33 +232,49 @@ class CRUDGenerator(Generic[ModelType]):
         self, model_instance: ModelType, inserts: list[str] | None = None
     ) -> list[str]:
         inserts = inserts or []
-        schema_info = self._schema[self._tablename_from_model(model_instance)]
-        insert = ""
+        schema_info = self._schema[self._tablename_from_model_instance(model_instance)]
+        columns = [c for c in schema_info.columns]
+        values = [
+            self._py_type_to_sql(
+                model_instance.__dict__[
+                    c.removesuffix("_id") if c in schema_info.relationships else c
+                ]
+            )
+            for c in columns
+        ]
         for k, v in type(model_instance).__fields__.items():
-            if type(v) in self._models.values():
-                inserts.extend(self._get_inserts(model_instance.__dict__[k]))
-        # TODO Remember to keep proper order of inserts.
+            if k in schema_info.relationships:
+                inserts = self._get_inserts(model_instance.__dict__[k]) + inserts
+        inserts.append(str(Query.into(self._table).columns(*columns).insert(*values)))
         return inserts
 
-    def _get_database_value(self, value: Any) -> Any:
+    def _py_type_to_sql(self, value: Any) -> Any:
         if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
             return str(value)
+        if isinstance(value, (dict, list)):
+            return json.dumps(value)
+        if isinstance(value, BaseModel):
+            return self._py_type_to_sql(value.id)
         return value
 
-    def _model_instance_data(self, model_instance: ModelType) -> dict[str, Any]:
-        data = model_instance.dict()
-        if self._engine.name != "postgres":
-            for k, v in data.items():
-                if isinstance(v, uuid.UUID):
-                    data[k] = str(v)
-                if v in self._models.values():
-                    data[k] = self._get_database_value(v.id)
-        return data
+    def _sql_type_to_py(self, model: BaseModel, column: str, row_mapping: dict) -> Any:
+        # Include row_mapping so the columns of child tables are present and may be used
+        #  for child model serialization.
+        schema_info = self._schema[self._tablename_from_model(model)]
+        # TODO.
+        return row_mapping[column]
 
-    def _model_from_row(self, data: Any) -> ModelType | None:
-        # # noinspection PyCallingNonCallable
-        # return self._pydantic_model(**{k: data[i] for i, k in "TODO"})  # TODO
-        return None
+    def _model_from_row(self, row: Any) -> ModelType:
+        py_type = {}
+        # noinspection PyProtectedMember
+        for column, value in row._mapping.items():
+            py_type[column] = self._sql_type_to_py(self._pydantic_model, column, value)
+        # noinspection PyCallingNonCallable
+        return self._pydantic_model(**py_type)
+
+    def _tablename_from_model_instance(self, model: BaseModel) -> str:
+        # noinspection PyTypeHints
+        return [k for k, v in self._models.items() if isinstance(model, v)][0]
 
     def _tablename_from_model(self, model: BaseModel) -> str:
-        return [k for k, v in self._models.items() if isinstance(v, type(model))][0]
+        return [k for k, v in self._models.items() if v == model][0]

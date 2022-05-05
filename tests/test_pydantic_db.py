@@ -54,14 +54,6 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         # Find new record and compare.
         self.assertEqual("mocha", (await db[Flavor].find_one(mocha.id)).name)
 
-    # async def test_exclude(self) -> None:
-    #     # Insert record.
-    #     flavor = Flavor(name="hazelnut", strength=1)
-    #     hazelnut = await db[Flavor].insert(flavor)
-    #     # Find new record and compare.
-    #     result = await db[Flavor].find_one(hazelnut.id, exclude=[Flavor.strength])
-    #     self.assertEqual(None, result.strength)
-    #
     # async def test_find_many(self) -> None:
     #     # Delete all flavors.
     #     ...
@@ -106,17 +98,23 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         # TODO Find one record.
         self.assertEqual(None, None)
 
-
-class ORMPyDBTests(unittest.IsolatedAsyncioTestCase):
-    pass
-    # async def test_insert_and_find_one(self) -> None:
-    #     # Insert record.
-    #     await db.generate_schemas()
-    #     flavor = Flavor(name="mocha")
-    #     await db[Flavor].insert(flavor)
-    #     coffee = Coffee(flavor=flavor)
-    #     await db[Coffee].insert(coffee)
-    #     # Find new record and compare.
-    #     self.assertDictEqual(
-    #         coffee.dict(), (await db[Coffee].find_one(coffee.id)).dict()
-    #     )
+# class ORMPyDBTests(unittest.IsolatedAsyncioTestCase):
+    async def test_insert_and_find_orm(self) -> None:
+        # Insert record.
+        mocha = Flavor(name="mocha")
+        await db[Flavor].insert(mocha)
+        vanilla = Flavor(name="vanilla")
+        await db[Flavor].insert(vanilla)
+        coffee = Coffee(
+            primary_flavor=mocha,
+            secondary_flavor=vanilla,
+            sweetener="none",
+            cream=0,
+            place={"sum": 1},
+            ice=["cubes"],
+        )
+        await db[Coffee].insert(coffee)
+        # Find new record and compare.
+        self.assertDictEqual(
+            coffee.dict(), (await db[Coffee].find_one(coffee.id)).dict()
+        )
