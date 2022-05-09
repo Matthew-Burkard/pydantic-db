@@ -79,14 +79,11 @@ class CRUDGenerator(Generic[ModelType]):
             depth,
             [self._table.field(c) for c in pydb_table.columns],
         )
-        statement = text(
-            str(
-                query.where(self._table.id == self._py_type_to_sql(pk)).select(*columns)
-            )
-        )
-        result = await self._execute(statement)
+        query = query.where(self._table.id == self._py_type_to_sql(pk)).select(*columns)
+        result = await self._execute(query)
         try:
-            return self._model_from_row(next(result))
+            # noinspection PyProtectedMember
+            return self._model_from_row_mapping(next(result)._mapping)
         except StopIteration:
             return None
 
@@ -115,12 +112,13 @@ class CRUDGenerator(Generic[ModelType]):
             [self._table.field(c) for c in pydb_table.columns],
         )
         query.limit(limit)
-        statement = text(str(query.where(*()).select(*columns)))
-        result = await self._execute(statement)
+        query = query.where(*()).select(*columns)
+        result = await self._execute(query)
+        # noinspection PyProtectedMember
         return Result(
             offset=offset,
             limit=limit,
-            data=[self._model_from_row(row) for row in result],
+            data=[self._model_from_row_mapping(row._mapping) for row in result],
         )
 
     async def insert(self, model_instance: ModelType) -> ModelType:
@@ -163,13 +161,13 @@ class CRUDGenerator(Generic[ModelType]):
         await self._execute(statement)
         return True
 
-    async def _execute(self, statement: str) -> Any:
+    async def _execute(self, query: QueryBuilder) -> Any:
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
         async with async_session() as session:
             async with session.begin():
-                result = await session.execute(statement)
+                result = await session.execute(text(str(query)))
             await session.commit()
         await self._engine.dispose()
         return result
@@ -217,7 +215,10 @@ class CRUDGenerator(Generic[ModelType]):
                     pypika_table.field(field_name) == rel_table.id
                 )
                 columns.extend(
-                    [rel_table.field(c) for c in self._schema[tablename].columns]
+                    [
+                        rel_table.field(c).as_(f"{relation_name}//{c}")
+                        for c in self._schema[tablename].columns
+                    ]
                 )
                 # Add joins of relations of this table to query.
                 query, new_cols = self._build_joins(
@@ -247,7 +248,7 @@ class CRUDGenerator(Generic[ModelType]):
         return inserts
 
     def _get_upserts(self) -> list[str]:
-        return [""] or [str(self)]
+        return [""] or [str(self)]  # TODO
 
     def _py_type_to_sql(self, value: Any) -> Any:
         if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
@@ -266,13 +267,12 @@ class CRUDGenerator(Generic[ModelType]):
         schema_info = self._schema[self._tablename_from_model(model)]
         if column in schema_info.relationships:
             # TODO Manipulate row_mapping data into proper form.
-            pass
+            print(row_mapping)
         return model.__fields__[column].type_(row_mapping[column])
 
-    def _model_from_row(self, row: Any) -> ModelType:
+    def _model_from_row_mapping(self, row_mapping: dict[str, Any]) -> ModelType:
         py_type = {}
         # noinspection PyProtectedMember
-        row_mapping = row._mapping
         for column, value in row_mapping.items():
             py_type[column] = self._sql_type_to_py(
                 self._pydantic_model, column, row_mapping
