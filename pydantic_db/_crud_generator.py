@@ -297,8 +297,6 @@ class CRUDGenerator(Generic[ModelType]):
                     table_tree=column_name.removesuffix("_id"),
                 )
             else:
-                if column_name in schema_info.relationships:
-                    continue
                 py_type[column_name] = self._sql_type_to_py(
                     model_type, column_name, value
                 )
