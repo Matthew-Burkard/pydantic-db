@@ -13,5 +13,6 @@ class PyDBTableMeta(GenericModel, Generic[ModelType]):
     model: Type[ModelType]
     pk: str
     indexed: list[str]
+    unique: list[str]
     columns: list[str]
     relationships: dict[str, str]

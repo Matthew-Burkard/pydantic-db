@@ -41,38 +41,35 @@ class SQLAlchemyTableGenerator:
     ) -> tuple[Column[Any] | Column, ...]:
         columns = []
         for k, v in table_data.model.__fields__.items():
-            pk = k == table_data.pk
-            index = k in table_data.indexed
+            kwargs = {
+                "pk": k == table_data.pk,
+                "index": k in table_data.indexed,
+                "unique": k in table_data.unique,
+            }
             if issubclass(v.type_, BaseModel):
                 if v.type_ in [it.model for it in self._schema.values()]:
                     foreign_table = self._tablename_from_model(v.type_)
                     pk = self._schema[foreign_table].pk
                     columns.append(
-                        Column(
-                            f"{k}_id", ForeignKey(f"{foreign_table}.{pk}"), index=index
-                        )
+                        Column(f"{k}_id", ForeignKey(f"{foreign_table}.{pk}"), **kwargs)
                     )
                 else:
-                    columns.append(Column(k, JSON, index=index))
+                    columns.append(Column(k, JSON, **kwargs))
             elif v.type_ is uuid.UUID:
                 col_type = (
                     postgresql.UUID if self._engine.name == "postgres" else String(36)
                 )
-                columns.append(Column(k, col_type, primary_key=pk, index=index))
+                columns.append(Column(k, col_type, **kwargs))
             elif v.type_ is str or issubclass(v.type_, ConstrainedStr):
-                columns.append(
-                    Column(
-                        k, String(v.field_info.max_length), primary_key=pk, index=index
-                    )
-                )
+                columns.append(Column(k, String(v.field_info.max_length), **kwargs))
             elif v.type_ is int:
-                columns.append(Column(k, Integer, primary_key=pk, index=index))
+                columns.append(Column(k, Integer, **kwargs))
             elif v.type_ is float:
-                columns.append(Column(k, Float, primary_key=pk, index=index))
+                columns.append(Column(k, Float, **kwargs))
             elif v.type_ is dict:
-                columns.append(Column(k, JSON, primary_key=pk, index=index))
+                columns.append(Column(k, JSON, **kwargs))
             elif v.type_ is list:
-                columns.append(Column(k, JSON, primary_key=pk, index=index))
+                columns.append(Column(k, JSON, **kwargs))
         return tuple(columns)
 
     def _tablename_from_model(self, model: Any) -> str:

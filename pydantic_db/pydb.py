@@ -34,13 +34,19 @@ class PyDB:
         return self._crud_generators.get(model)
 
     def table(
-        self, tablename: str | None = None, *, pk: str, indexed: list[str] | None = None
+        self,
+        tablename: str | None = None,
+        *,
+        pk: str,
+        indexed: list[str] | None = None,
+        unique: list[str] | None = None,
     ) -> Callable[[Type[ModelType]], Type[ModelType]]:
         """Make the decorated model a database table.
 
         :param tablename: The database table name.
         :param pk: Field name of table primary key.
-        :param indexed: Field names to index.
+        :param indexed: Names of fields to index.
+        :param unique: Names of fields that must be unique.
         :return: The decorated class.
         """
 
@@ -51,6 +57,7 @@ class PyDB:
                 model=cls,
                 pk=pk,
                 indexed=indexed or [],
+                unique=unique or [],
                 columns=[],
                 relationships={},
             )
