@@ -2,11 +2,12 @@
 import asyncio
 import json
 import uuid
-from typing import Any, Callable, Generic, Iterable
+from typing import Any, Callable, Generic, Iterable, Type
 from uuid import UUID
 
+import pydantic
 from pydantic.generics import GenericModel
-from pypika import Field, Query, Table  # type: ignore
+from pypika import Field, Order, Query, Table  # type: ignore
 from pypika.queries import QueryBuilder  # type: ignore
 from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
@@ -29,7 +30,7 @@ class CRUDMethods(GenericModel, Generic[ModelType]):
 
     find_one: Callable[[UUID], ModelType]
     find_many: Callable[
-        [dict[str, Any] | None, list[str] | None, int, int, int | None],
+        [dict[str, Any] | None, list[str] | None, Order, int, int, int],
         list[Result[ModelType]],
     ]
     insert: Callable[[ModelType], ModelType]
@@ -77,23 +78,22 @@ class CRUDGenerator(Generic[ModelType]):
             Query.from_(self._table),
             pydb_table,
             depth,
-            [self._table.field(c) for c in pydb_table.columns],
+            self._columns(pydb_table),
         )
-        statement = text(
-            str(
-                query.where(self._table.id == self._py_type_to_sql(pk)).select(*columns)
-            )
-        )
-        result = await self._execute(statement)
+        query = query.where(self._table.id == self._py_type_to_sql(pk)).select(*columns)
+        result = await self._execute(query)
         try:
-            return self._model_from_row(next(result))
+            # noinspection PyProtectedMember
+            return self._model_from_row_mapping(next(result)._mapping)
         except StopIteration:
             return None
 
+    # TODO Change order_by to be pydantic fields.
     async def find_many(
         self,
         where: dict[str, Any] | None = None,
         order_by: list[str] | None = None,
+        order: Order = Order.asc,
         limit: int = 0,
         offset: int = 0,
         depth: int = 0,
@@ -102,25 +102,34 @@ class CRUDGenerator(Generic[ModelType]):
 
         :param where: Dictionary of column name to desired value.
         :param order_by: Columns to order by.
+        :param order: Order results by ascending or descending.
         :param limit: Number of records to return.
         :param offset: Number of records to offset by.
         :param depth: Depth of relations to populate.
         :return: A list of models representing table records.
         """
+        where = where or {}
+        order_by = order_by or []
         pydb_table = self._schema[self._tablename]
         query, columns = self._build_joins(
             Query.from_(self._table),
             pydb_table,
             depth,
-            [self._table.field(c) for c in pydb_table.columns],
+            self._columns(pydb_table),
         )
-        query.limit(limit)
-        statement = text(str(query.where(*()).select(*columns)))
-        result = await self._execute(statement)
+        for field, value in where.items():
+            query = query.where(self._table.field(field) == value)
+        query = query.orderby(*order_by, order=order).select(*columns)
+        if limit:
+            query = query.limit(limit)
+        if offset:
+            query = query.offset(offset)
+        result = await self._execute(query)
+        # noinspection PyProtectedMember
         return Result(
             offset=offset,
             limit=limit,
-            data=[self._model_from_row(row) for row in result],
+            data=[self._model_from_row_mapping(row._mapping) for row in result],
         )
 
     async def insert(self, model_instance: ModelType) -> ModelType:
@@ -130,7 +139,6 @@ class CRUDGenerator(Generic[ModelType]):
         :return: Inserted model.
         """
         inserts = self._get_inserts(model_instance)
-        print(inserts)  # TODO Delete me.
         await self._execute_many((text(s) for s in inserts))
         return model_instance
 
@@ -159,17 +167,18 @@ class CRUDGenerator(Generic[ModelType]):
 
     async def delete(self, pk: uuid.UUID) -> bool:
         """Delete a record."""
-        statement = text("")
-        await self._execute(statement)
+        await self._execute(
+            Query.from_(self._table).where(self._table.id == pk).delete()
+        )
         return True
 
-    async def _execute(self, statement: str) -> Any:
+    async def _execute(self, query: QueryBuilder) -> Any:
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
         async with async_session() as session:
             async with session.begin():
-                result = await session.execute(statement)
+                result = await session.execute(text(str(query)))
             await session.commit()
         await self._engine.dispose()
         return result
@@ -195,6 +204,12 @@ class CRUDGenerator(Generic[ModelType]):
         await self._engine.dispose()
         return results
 
+    def _columns(self, pydb_table: PyDBTableMeta) -> list[Field]:
+        return [
+            self._table.field(c).as_(f"{self._tablename}//{c}")
+            for c in pydb_table.columns
+        ]
+
     def _build_joins(
         self,
         query: QueryBuilder,
@@ -202,7 +217,7 @@ class CRUDGenerator(Generic[ModelType]):
         depth: int,
         columns: list[Field],
         table_tree: str | None = None,
-    ) -> tuple[QueryBuilder, list]:
+    ) -> tuple[QueryBuilder, list[Field]]:
         if depth and (relationships := self._schema[table.name].relationships):
             depth -= 1
             table_tree = table_tree or table.name
@@ -217,7 +232,10 @@ class CRUDGenerator(Generic[ModelType]):
                     pypika_table.field(field_name) == rel_table.id
                 )
                 columns.extend(
-                    [rel_table.field(c) for c in self._schema[tablename].columns]
+                    [
+                        rel_table.field(c).as_(f"{relation_name}//{c}")
+                        for c in self._schema[tablename].columns
+                    ]
                 )
                 # Add joins of relations of this table to query.
                 query, new_cols = self._build_joins(
@@ -247,38 +265,42 @@ class CRUDGenerator(Generic[ModelType]):
         return inserts
 
     def _get_upserts(self) -> list[str]:
-        return [""] or [str(self)]
+        return [""] or [str(self)]  # TODO
 
-    def _py_type_to_sql(self, value: Any) -> Any:
-        if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
-            return str(value)
-        if isinstance(value, (dict, list)):
-            return json.dumps(value)
-        if isinstance(value, BaseModel):
-            return self._py_type_to_sql(value.id)
-        return value
-
-    def _sql_type_to_py(self, model: BaseModel, column: str, row_mapping: dict) -> Any:
-        if row_mapping[column] is None:
-            return None
-        # Include row_mapping so the columns of child tables are present
-        #  and may be used for child model serialization.
-        schema_info = self._schema[self._tablename_from_model(model)]
-        if column in schema_info.relationships:
-            # TODO Manipulate row_mapping data into proper form.
-            pass
-        return model.__fields__[column].type_(row_mapping[column])
-
-    def _model_from_row(self, row: Any) -> ModelType:
+    def _model_from_row_mapping(
+        self,
+        row_mapping: dict[str, Any],
+        model_type: Type[ModelType] | None = None,
+        table_tree: str | None = None,
+    ) -> ModelType:
+        model_type = model_type or self._pydantic_model
+        table_tree = table_tree or self._tablename
         py_type = {}
-        # noinspection PyProtectedMember
-        row_mapping = row._mapping
+        schema_info = self._schema[self._tablename_from_model(model_type)]
         for column, value in row_mapping.items():
-            py_type[column] = self._sql_type_to_py(
-                self._pydantic_model, column, row_mapping
-            )
-        # noinspection PyCallingNonCallable
-        return self._pydantic_model(**py_type)
+            if not column.startswith(f"{table_tree}//"):
+                # This must be a column somewhere else in the tree.
+                continue
+            column_name = column.removeprefix(f"{table_tree}//")
+            if column_name in schema_info.relationships:
+                if value is None:
+                    # No further depth has been found.
+                    continue
+                foreign_model = self._models[schema_info.relationships[column_name]]
+                py_type[column_name.removesuffix("_id")] = self._model_from_row_mapping(
+                    row_mapping={
+                        k.removeprefix(f"{table_tree}/"): v
+                        for k, v in row_mapping.items()
+                        if not k.startswith(f"{table_tree}//")
+                    },
+                    model_type=foreign_model,
+                    table_tree=column_name.removesuffix("_id"),
+                )
+            else:
+                py_type[column_name] = self._sql_type_to_py(
+                    model_type, column_name, value
+                )
+        return model_type(**py_type)
 
     def _tablename_from_model_instance(self, model: BaseModel) -> str:
         # noinspection PyTypeHints
@@ -286,3 +308,24 @@ class CRUDGenerator(Generic[ModelType]):
 
     def _tablename_from_model(self, model: BaseModel) -> str:
         return [k for k, v in self._models.items() if v == model][0]
+
+    def _py_type_to_sql(self, value: Any) -> Any:
+        if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
+            return str(value)
+        if isinstance(value, (dict, list)):
+            return json.dumps(value)
+        if isinstance(value, BaseModel) and type(value) in self._models.values():
+            return self._py_type_to_sql(value.id)
+        if isinstance(value, pydantic.BaseModel):
+            return value.json()
+        return value
+
+    @staticmethod
+    def _sql_type_to_py(model: BaseModel, column: str, value: Any) -> Any:
+        if value is None:
+            return None
+        if model.__fields__[column].type_ in [dict, list]:
+            return json.loads(value)
+        if issubclass(model.__fields__[column].type_, pydantic.BaseModel):
+            return model.__fields__[column].type_(**json.loads(value))
+        return model.__fields__[column].type_(value)

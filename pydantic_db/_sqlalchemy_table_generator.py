@@ -18,8 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
 from pydantic_db.models import ModelType
 
-metadata = MetaData()
-
 
 class SQLAlchemyTableGenerator:
     """Generate SQL Alchemy tables from pydantic models."""
@@ -28,6 +26,7 @@ class SQLAlchemyTableGenerator:
         self._engine = engine
         self._tables: dict[ModelType, Table] = {}
         self._schema = schema
+        self._metadata = MetaData()
 
     async def init(self) -> None:
         """Generate SQL Alchemy tables."""
@@ -35,12 +34,12 @@ class SQLAlchemyTableGenerator:
             self._generate_table(tablename, model)
         async with self._engine.begin() as conn:
             # TODO Remove drop_all
-            await conn.run_sync(metadata.drop_all)
-            await conn.run_sync(metadata.create_all)
+            await conn.run_sync(self._metadata.drop_all)
+            await conn.run_sync(self._metadata.create_all)
 
     def _generate_table(self, tablename: str, pydantic_model: ModelType) -> None:
         self._tables[pydantic_model] = Table(
-            tablename, metadata, *self._get_columns(pydantic_model)
+            tablename, self._metadata, *self._get_columns(pydantic_model)
         )
 
     def _get_columns(
@@ -78,4 +77,3 @@ class SQLAlchemyTableGenerator:
         for tablename, v in self._schema.items():
             if v == model:
                 return tablename
-        raise ValueError("Given model is not a table.")
