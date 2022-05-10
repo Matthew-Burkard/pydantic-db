@@ -3,20 +3,19 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-import pydantic
+from pydantic import BaseModel, Field
 from pypika import Order
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pydantic_db.models import BaseModel, Field
 from pydantic_db.pydb import PyDB
 
 engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
 db = PyDB(engine)
 
 
-class Vector3(pydantic.BaseModel):
+class Vector3(BaseModel):
     """3 floating point numbers."""
 
     x: float = 1.0
@@ -24,19 +23,21 @@ class Vector3(pydantic.BaseModel):
     z: float = 1.0
 
 
-@db.table()
+@db.table(pk="id", indexed=["strength"])
 class Flavor(BaseModel):
     """A coffee flavor."""
 
+    id: UUID = Field(default_factory=uuid4)
     name: str = Field(max_length=63)
     strength: int | None = None
     coffee: Coffee | None = None
 
 
-@db.table()
+@db.table(pk="id")
 class Coffee(BaseModel):
     """Drink it in the morning."""
 
+    id: UUID = Field(default_factory=uuid4)
     primary_flavor: Flavor
     secondary_flavor: Flavor
     sweetener: str

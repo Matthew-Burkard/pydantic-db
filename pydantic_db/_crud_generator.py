@@ -1,11 +1,11 @@
 """Generate Python CRUD methods for a model."""
 import asyncio
 import json
-import uuid
 from typing import Any, Callable, Generic, Iterable, Type
 from uuid import UUID
 
 import pydantic
+from pydantic import BaseModel
 from pydantic.generics import GenericModel
 from pypika import Field, Order, Query, Table  # type: ignore
 from pypika.queries import QueryBuilder  # type: ignore
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
 from pydantic_db._table import PyDBTableMeta
-from pydantic_db.models import BaseModel, ModelType
+from pydantic_db._types import ModelType
 
 
 class Result(GenericModel, Generic[ModelType]):
@@ -47,7 +47,6 @@ class CRUDGenerator(Generic[ModelType]):
         pydantic_model: ModelType,
         tablename: str,
         engine: AsyncEngine,
-        models: dict[str, ModelType],
         schema: dict[str, PyDBTableMeta],
     ) -> None:
         """Provides DB CRUD methods for a model type.
@@ -55,18 +54,16 @@ class CRUDGenerator(Generic[ModelType]):
         :param pydantic_model: Model to create CRUD methods for.
         :param tablename: Name of the corresponding database table.
         :param engine: A SQL Alchemy async engine.
-        :param models: List of all models.
         :param schema: Map of tablename to table information objects.
         """
         self._pydantic_model = pydantic_model
         self._tablename = tablename
         self._table = Table(tablename)
         self._engine = engine
-        self._models = models
         self._schema = schema
         self._field_to_column: dict[Any, str] = {}
 
-    async def find_one(self, pk: uuid.UUID, depth: int = 0) -> ModelType | None:
+    async def find_one(self, pk: Any, depth: int = 0) -> ModelType | None:
         """Get one record.
 
         :param pk: Primary key of the record to get.
@@ -88,7 +85,6 @@ class CRUDGenerator(Generic[ModelType]):
         except StopIteration:
             return None
 
-    # TODO Change order_by to be pydantic fields.
     async def find_many(
         self,
         where: dict[str, Any] | None = None,
@@ -142,7 +138,7 @@ class CRUDGenerator(Generic[ModelType]):
         await self._execute_many((text(s) for s in inserts))
         return model_instance
 
-    async def update(self, model_instance: ModelType) -> ModelType:
+    async def update(self, model_instance: ModelType) -> ModelType:  # TODO
         """Update a record.
 
         :param model_instance: Model representing record to update.
@@ -165,7 +161,7 @@ class CRUDGenerator(Generic[ModelType]):
             return await self.update(model_instance)
         return await self.insert(model_instance)
 
-    async def delete(self, pk: uuid.UUID) -> bool:
+    async def delete(self, pk: Any) -> bool:
         """Delete a record."""
         await self._execute(
             Query.from_(self._table).where(self._table.id == pk).delete()
@@ -286,14 +282,14 @@ class CRUDGenerator(Generic[ModelType]):
                 if value is None:
                     # No further depth has been found.
                     continue
-                foreign_model = self._models[schema_info.relationships[column_name]]
+                foreign_table = self._schema[schema_info.relationships[column_name]]
                 py_type[column_name.removesuffix("_id")] = self._model_from_row_mapping(
                     row_mapping={
                         k.removeprefix(f"{table_tree}/"): v
                         for k, v in row_mapping.items()
                         if not k.startswith(f"{table_tree}//")
                     },
-                    model_type=foreign_model,
+                    model_type=foreign_table.model,
                     table_tree=column_name.removesuffix("_id"),
                 )
             else:
@@ -304,19 +300,22 @@ class CRUDGenerator(Generic[ModelType]):
 
     def _tablename_from_model_instance(self, model: BaseModel) -> str:
         # noinspection PyTypeHints
-        return [k for k, v in self._models.items() if isinstance(model, v)][0]
+        return [k for k, v in self._schema.items() if isinstance(model, v.model)][0]
 
     def _tablename_from_model(self, model: BaseModel) -> str:
-        return [k for k, v in self._models.items() if v == model][0]
+        return [k for k, v in self._schema.items() if v.model == model][0]
 
     def _py_type_to_sql(self, value: Any) -> Any:
-        if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
+        if self._engine.name != "postgres" and isinstance(value, UUID):
             return str(value)
         if isinstance(value, (dict, list)):
             return json.dumps(value)
-        if isinstance(value, BaseModel) and type(value) in self._models.values():
-            return self._py_type_to_sql(value.id)
-        if isinstance(value, pydantic.BaseModel):
+        if isinstance(value, BaseModel) and type(value) in [
+            it.model for it in self._schema.values()
+        ]:
+            tablename = self._tablename_from_model_instance(value)
+            return self._py_type_to_sql(value.__dict__[self._schema[tablename].pk])
+        if isinstance(value, BaseModel):
             return value.json()
         return value
 
