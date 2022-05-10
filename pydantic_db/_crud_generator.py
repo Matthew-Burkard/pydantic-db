@@ -6,7 +6,7 @@ from typing import Any, Callable, Generic, Iterable, Type
 from uuid import UUID
 
 from pydantic.generics import GenericModel
-from pypika import Field, Query, Table  # type: ignore
+from pypika import Field, Order, Query, Table  # type: ignore
 from pypika.queries import QueryBuilder  # type: ignore
 from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
@@ -29,7 +29,7 @@ class CRUDMethods(GenericModel, Generic[ModelType]):
 
     find_one: Callable[[UUID], ModelType]
     find_many: Callable[
-        [dict[str, Any] | None, list[str] | None, int, int, int | None],
+        [dict[str, Any] | None, list[str] | None, Order, int, int, int],
         list[Result[ModelType]],
     ]
     insert: Callable[[ModelType], ModelType]
@@ -87,10 +87,12 @@ class CRUDGenerator(Generic[ModelType]):
         except StopIteration:
             return None
 
+    # TODO Change order_by to be pydantic fields.
     async def find_many(
         self,
         where: dict[str, Any] | None = None,
         order_by: list[str] | None = None,
+        order: Order = Order.asc,
         limit: int = 0,
         offset: int = 0,
         depth: int = 0,
@@ -99,11 +101,14 @@ class CRUDGenerator(Generic[ModelType]):
 
         :param where: Dictionary of column name to desired value.
         :param order_by: Columns to order by.
+        :param order: Order results by ascending or descending.
         :param limit: Number of records to return.
         :param offset: Number of records to offset by.
         :param depth: Depth of relations to populate.
         :return: A list of models representing table records.
         """
+        where = where or {}
+        order_by = order_by or []
         pydb_table = self._schema[self._tablename]
         query, columns = self._build_joins(
             Query.from_(self._table),
@@ -111,8 +116,13 @@ class CRUDGenerator(Generic[ModelType]):
             depth,
             self._columns(pydb_table),
         )
-        query.limit(limit)
-        query = query.where(*()).select(*columns)
+        for field, value in where.items():
+            query = query.where(self._table.field(field) == value)
+        query = query.orderby(*order_by, order=order).select(*columns)
+        if limit:
+            query = query.limit(limit)
+        if offset:
+            query = query.offset(offset)
         result = await self._execute(query)
         # noinspection PyProtectedMember
         return Result(
@@ -156,8 +166,9 @@ class CRUDGenerator(Generic[ModelType]):
 
     async def delete(self, pk: uuid.UUID) -> bool:
         """Delete a record."""
-        statement = text("")
-        await self._execute(statement)
+        await self._execute(
+            Query.from_(self._table).where(self._table.id == pk).delete()
+        )
         return True
 
     async def _execute(self, query: QueryBuilder) -> Any:
@@ -283,9 +294,7 @@ class CRUDGenerator(Generic[ModelType]):
                 if value is None:
                     # No further depth has been found.
                     continue
-                foreign_model = self._models[
-                    schema_info.relationships[column_name]
-                ]
+                foreign_model = self._models[schema_info.relationships[column_name]]
                 py_type[column_name.removesuffix("_id")] = self._model_from_row_mapping(
                     row_mapping={
                         k.removeprefix(f"{table_tree}/"): v
