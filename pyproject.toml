@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pydantic-db"
-version = "0.17.3"
+version = "0.17.9"
 description = ""
 authors = ["Matthew Burkard <matthewjburkard@gmail.com>"]
 

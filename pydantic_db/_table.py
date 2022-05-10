@@ -1,10 +1,17 @@
 """Module providing PyDBTable."""
-from pydantic import BaseModel
+from typing import Generic, Type
+
+from pydantic.generics import GenericModel
+
+from pydantic_db._types import ModelType
 
 
-class PyDBTableMeta(BaseModel):
+class PyDBTableMeta(GenericModel, Generic[ModelType]):
     """Class to store table information."""
 
     name: str
+    model: Type[ModelType]
+    pk: str
+    indexed: list[str]
     columns: list[str]
     relationships: dict[str, str]
