@@ -66,14 +66,16 @@ class CRUDGenerator(Generic[ModelType]):
         :param depth: ORM fetch depth.
         :return: A model representing the record if it exists else None.
         """
-        pydb_table = self._schema[self._tablename]
+        table_data = self._schema[self._tablename]
         query, columns = self._build_joins(
             Query.from_(self._table),
-            pydb_table,
+            table_data,
             depth,
-            self._columns(pydb_table),
+            self._columns(table_data),
         )
-        query = query.where(self._table.id == self._py_type_to_sql(pk)).select(*columns)
+        query = query.where(
+            self._table.field(table_data.pk) == self._py_type_to_sql(pk)
+        ).select(*columns)
         result = await self._execute(query)
         try:
             # noinspection PyProtectedMember
@@ -149,8 +151,24 @@ class CRUDGenerator(Generic[ModelType]):
         :param model_instance: Model representing record to update.
         :return: The updated model.
         """
-        statement = text("")
-        await self._execute(statement)
+        table_data = self._schema[self._tablename]
+        columns = [c for c in table_data.columns]
+        values = [
+            self._py_type_to_sql(
+                model_instance.__dict__[
+                    c.removesuffix("_id") if c in table_data.relationships else c
+                ]
+            )
+            for c in columns
+        ]
+        query = Query.update(self._table)
+        for i, column in enumerate(columns):
+            query = query.set(column, values[i])
+        pk = model_instance.__dict__[table_data.pk]
+        query = query.where(
+            self._table.field(table_data.pk) == self._py_type_to_sql(pk)
+        )
+        await self._execute(query)
         return model_instance
 
     async def upsert(self, model_instance: ModelType) -> ModelType:

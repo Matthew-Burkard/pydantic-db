@@ -102,30 +102,29 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         flavors_page_2 = await db[Flavor].find_many(limit=2, offset=2)
         self.assertListEqual([vanilla, caramel], flavors_page_2.data)
 
-    # async def test_update(self) -> None:
-    #     # Insert record.
-    #     flavor = await db[Flavor].insert(Flavor(name="mocha"))
-    #     # Update record.
-    #     flavor.name = "caramel"
-    #     await db[Flavor].update(flavor)
-    #     # Find the updated record.
-    #     self.assertEqual(flavor.name, (await db[Flavor].find_one(flavor.id)).name)
-    #
-    # async def test_upsert(self) -> None:
-    #     # Insert record.
-    #     flavor = await db[Flavor].insert(Flavor(name="vanilla"))
-    #     # upsert record.
-    #     await db[Flavor].upsert(flavor)
-    #     # Find all "vanilla" record.
-    #     vanillas = await db[Flavor].find_many(where={"id": flavor.id})
-    #     self.assertEqual(1, len(vanillas.data))
-    #     # Upsert as update.
-    #     flavor.name = "caramel"
-    #     await db[Flavor].upsert(flavor)
-    #     # Find one record.
-    #     vanillas = await db[Flavor].find_many(where={"id": flavor.id})
-    #     self.assertEqual(1, len(vanillas.data))
-    #     self.assertEqual("caramel", len(vanillas.data))
+    async def test_update(self) -> None:
+        # Insert record.
+        flavor = await db[Flavor].insert(Flavor(name="mocha"))
+        # Update record.
+        flavor.name = "caramel"
+        await db[Flavor].update(flavor)
+        # Find the updated record.
+        self.assertEqual(flavor.name, (await db[Flavor].find_one(flavor.id)).name)
+
+    async def test_upsert(self) -> None:
+        # Upsert record as insert.
+        flavor = await db[Flavor].insert(Flavor(name="vanilla"))
+        await db[Flavor].upsert(flavor)
+        # Find all "vanilla" record.
+        flavors = await db[Flavor].find_many(where={"id": flavor.id})
+        self.assertEqual(1, len(flavors.data))
+        # Upsert as update.
+        flavor.name = "caramel"
+        await db[Flavor].upsert(flavor)
+        # Find one record.
+        flavors = await db[Flavor].find_many(where={"id": flavor.id})
+        self.assertEqual(1, len(flavors.data))
+        self.assertDictEqual(flavor.dict(), flavors.data[0].dict())
 
     async def test_delete(self) -> None:
         # Insert record.

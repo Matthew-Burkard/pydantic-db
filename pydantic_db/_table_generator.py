@@ -46,9 +46,10 @@ class SQLAlchemyTableGenerator:
             if issubclass(v.type_, BaseModel):
                 if v.type_ in [it.model for it in self._schema.values()]:
                     foreign_table = self._tablename_from_model(v.type_)
+                    pk = self._schema[foreign_table].pk
                     columns.append(
                         Column(
-                            f"{k}_id", ForeignKey(f"{foreign_table}.id"), index=index
+                            f"{k}_id", ForeignKey(f"{foreign_table}.{pk}"), index=index
                         )
                     )
                 else:
