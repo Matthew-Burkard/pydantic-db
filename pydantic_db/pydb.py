@@ -19,9 +19,7 @@ class PyDB:
 
         :param engine: A SQL Alchemy async engine.
         """
-        self._crud_generators: dict[  # type: ignore
-            Type[ModelType], CRUDGenerator[ModelType]
-        ] = {}
+        self._crud_generators: dict[Type, CRUDGenerator] = {}
         self._schema: dict[str, PyDBTableMeta] = {}
         self._engine = engine
 
