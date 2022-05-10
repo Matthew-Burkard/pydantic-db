@@ -5,6 +5,7 @@ import uuid
 from typing import Any, Callable, Generic, Iterable, Type
 from uuid import UUID
 
+import pydantic
 from pydantic.generics import GenericModel
 from pypika import Field, Order, Query, Table  # type: ignore
 from pypika.queries import QueryBuilder  # type: ignore
@@ -266,15 +267,6 @@ class CRUDGenerator(Generic[ModelType]):
     def _get_upserts(self) -> list[str]:
         return [""] or [str(self)]  # TODO
 
-    def _py_type_to_sql(self, value: Any) -> Any:
-        if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
-            return str(value)
-        if isinstance(value, (dict, list)):
-            return json.dumps(value)
-        if isinstance(value, BaseModel):
-            return self._py_type_to_sql(value.id)
-        return value
-
     def _model_from_row_mapping(
         self,
         row_mapping: dict[str, Any],
@@ -319,10 +311,23 @@ class CRUDGenerator(Generic[ModelType]):
     def _tablename_from_model(self, model: BaseModel) -> str:
         return [k for k, v in self._models.items() if v == model][0]
 
+    def _py_type_to_sql(self, value: Any) -> Any:
+        if self._engine.name != "postgres" and isinstance(value, uuid.UUID):
+            return str(value)
+        if isinstance(value, (dict, list)):
+            return json.dumps(value)
+        if isinstance(value, BaseModel) and type(value) in self._models.values():
+            return self._py_type_to_sql(value.id)
+        if isinstance(value, pydantic.BaseModel):
+            return value.json()
+        return value
+
     @staticmethod
     def _sql_type_to_py(model: BaseModel, column: str, value: Any) -> Any:
         if value is None:
             return None
         if model.__fields__[column].type_ in [dict, list]:
             return json.loads(value)
+        if issubclass(model.__fields__[column].type_, pydantic.BaseModel):
+            return model.__fields__[column].type_(**json.loads(value))
         return model.__fields__[column].type_(value)

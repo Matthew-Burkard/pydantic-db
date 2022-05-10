@@ -5,6 +5,7 @@ import asyncio
 import unittest
 from uuid import uuid4
 
+import pydantic
 from pypika import Order
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -13,6 +14,14 @@ from pydantic_db.pydb import PyDB
 
 engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
 db = PyDB(engine)
+
+
+class Vector3(pydantic.BaseModel):
+    """3 floating point numbers."""
+
+    x: float = 1.0
+    y: float = 1.0
+    z: float = 1.0
 
 
 @db.table()
@@ -34,6 +43,7 @@ class Coffee(BaseModel):
     cream: float
     place: dict
     ice: list
+    size: Vector3
 
 
 Flavor.update_forward_refs()
@@ -138,6 +148,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
             cream=0,
             place={"sum": 1},
             ice=["cubes"],
+            size=Vector3()
         )
         await db[Coffee].insert(coffee)
         # Find new record and compare.
