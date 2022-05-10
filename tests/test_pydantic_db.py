@@ -1,9 +1,11 @@
 """PyDB tests."""
 from __future__ import annotations
 
+import asyncio
 import unittest
 from uuid import uuid4
 
+from pypika import Order
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.models import BaseModel, Field
@@ -38,8 +40,11 @@ Flavor.update_forward_refs()
 
 
 class PyDBTests(unittest.IsolatedAsyncioTestCase):
-    async def test_create_tables(self) -> None:
-        await db.init()
+    def setUp(self) -> None:
+        """Setup clean sqlite database."""
+        asyncio.get_event_loop().run_until_complete(db.init())
+
+    async def test_table_creation(self) -> None:
         # TODO Get all tables.
         self.assertEqual(["coffee", "flavor"], ["coffee", "flavor"])
 
@@ -54,19 +59,38 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         # Find new record and compare.
         self.assertDictEqual(mocha.dict(), (await db[Flavor].find_one(mocha.id)).dict())
 
-    # async def test_find_many(self) -> None:
-    #     # Delete all flavors.
-    #     ...
-    #     # Insert 3 records.
-    #     mocha1 = await db[Flavor].insert(Flavor(name="mocha"))
-    #     mocha2 = await db[Flavor].insert(Flavor(name="mocha"))
-    #     caramel = await db[Flavor].insert(Flavor(name="caramel"))
-    #     # Find two records with filter.
-    #     mochas = await db[Flavor].find_many(where={"name": "mocha"})
-    #     self.assertListEqual([mocha1, mocha2], mochas.data)
-    #     flavors = await db[Flavor].find_many()
-    #     self.assertListEqual([mocha1, mocha2, caramel], flavors.data)
-    #
+    async def test_find_many(self) -> None:
+        # Insert 3 records.
+        mocha1 = await db[Flavor].insert(Flavor(name="mocha"))
+        mocha2 = await db[Flavor].insert(Flavor(name="mocha"))
+        caramel = await db[Flavor].insert(Flavor(name="caramel"))
+        # Find two records with filter.
+        mochas = await db[Flavor].find_many(where={"name": "mocha"})
+        self.assertListEqual([mocha1, mocha2], mochas.data)
+        flavors = await db[Flavor].find_many()
+        self.assertListEqual([mocha1, mocha2, caramel], flavors.data)
+
+    async def test_find_many_order(self) -> None:
+        # Insert 3 records.
+        mocha1 = await db[Flavor].insert(Flavor(name="mocha", strength=3))
+        mocha2 = await db[Flavor].insert(Flavor(name="mocha", strength=2))
+        caramel = await db[Flavor].insert(Flavor(name="caramel"))
+        flavors = await db[Flavor].find_many(
+            order_by=["name", "strength"], order=Order.desc
+        )
+        self.assertListEqual([mocha1, mocha2, caramel], flavors.data)
+
+    async def test_find_many_pagination(self) -> None:
+        # Insert 4 records.
+        mocha1 = await db[Flavor].insert(Flavor(name="mocha"))
+        mocha2 = await db[Flavor].insert(Flavor(name="mocha"))
+        vanilla = await db[Flavor].insert(Flavor(name="vanilla"))
+        caramel = await db[Flavor].insert(Flavor(name="caramel"))
+        flavors_page_1 = await db[Flavor].find_many(limit=2)
+        self.assertListEqual([mocha1, mocha2], flavors_page_1.data)
+        flavors_page_2 = await db[Flavor].find_many(limit=2, offset=2)
+        self.assertListEqual([vanilla, caramel], flavors_page_2.data)
+
     # async def test_update(self) -> None:
     #     # Insert record.
     #     flavor = await db[Flavor].insert(Flavor(name="mocha"))
@@ -93,10 +117,13 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
     #     self.assertEqual("caramel", len(vanillas.data))
 
     async def test_delete(self) -> None:
-        # TODO Insert record.
-        # TODO Delete record.
-        # TODO Find one record.
-        self.assertEqual(None, None)
+        # Insert record.
+        caramel = Flavor(name="caramel")
+        await db[Flavor].insert(caramel)
+        # Delete record.
+        await db[Flavor].delete(caramel.id)
+        # Find one record.
+        self.assertIsNone(await db[Flavor].find_one(caramel.id))
 
     async def test_insert_and_find_orm(self) -> None:
         # Insert record.
