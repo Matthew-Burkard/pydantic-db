@@ -1,7 +1,6 @@
 """Generate Python CRUD methods for a model."""
-import asyncio
 import json
-from typing import Any, Callable, Generic, Iterable, Type
+from typing import Any, Callable, Generic, Type
 from uuid import UUID
 
 import pydantic
@@ -131,8 +130,17 @@ class CRUDGenerator(Generic[ModelType]):
         :param model_instance: Instance to save as database record.
         :return: Inserted model.
         """
-        inserts = self._get_inserts(model_instance)
-        await self._execute_many((text(s) for s in inserts))
+        table_data = self._schema[self._tablename]
+        columns = [c for c in table_data.columns]
+        values = [
+            self._py_type_to_sql(
+                model_instance.__dict__[
+                    c.removesuffix("_id") if c in table_data.relationships else c
+                ]
+            )
+            for c in columns
+        ]
+        await self._execute(Query.into(self._table).columns(*columns).insert(*values))
         return model_instance
 
     async def update(self, model_instance: ModelType) -> ModelType:  # TODO
@@ -180,27 +188,6 @@ class CRUDGenerator(Generic[ModelType]):
         await self._engine.dispose()
         return result
 
-    async def _execute_many(
-        self, statements: Iterable[str]
-    ) -> tuple[
-        BaseException | Any,
-        BaseException | Any,
-        BaseException | Any,
-        BaseException | Any,
-        BaseException | Any,
-    ]:
-        async_session = sessionmaker(
-            self._engine, expire_on_commit=False, class_=AsyncSession
-        )
-        async with async_session() as session:
-            async with session.begin():
-                results = await asyncio.gather(
-                    *(session.execute(s) for s in statements)
-                )
-            await session.commit()
-        await self._engine.dispose()
-        return results
-
     def _columns(self, pydb_table: PyDBTableMeta) -> list[Field]:
         return [
             self._table.field(c).as_(f"{self._tablename}//{c}")
@@ -242,29 +229,6 @@ class CRUDGenerator(Generic[ModelType]):
                 columns.extend([c for c in new_cols if c not in columns])
         return query, columns
 
-    def _get_inserts(
-        self, model_instance: ModelType, inserts: list[str] | None = None
-    ) -> list[str]:
-        inserts = inserts or []
-        schema_info = self._schema[self._tablename_from_model_instance(model_instance)]
-        columns = [c for c in schema_info.columns]
-        values = [
-            self._py_type_to_sql(
-                model_instance.__dict__[
-                    c.removesuffix("_id") if c in schema_info.relationships else c
-                ]
-            )
-            for c in columns
-        ]
-        for k, v in type(model_instance).__fields__.items():
-            if k in schema_info.relationships:
-                inserts = self._get_inserts(model_instance.__dict__[k]) + inserts
-        inserts.append(str(Query.into(self._table).columns(*columns).insert(*values)))
-        return inserts
-
-    def _get_upserts(self) -> list[str]:
-        return [""] or [str(self)]  # TODO
-
     def _model_from_row_mapping(
         self,
         row_mapping: dict[str, Any],
@@ -298,7 +262,7 @@ class CRUDGenerator(Generic[ModelType]):
                 py_type[column_name] = self._sql_type_to_py(
                     model_type, column_name, value
                 )
-        return model_type(**py_type)  # type: ignore
+        return model_type(**py_type)
 
     def _tablename_from_model_instance(self, model: BaseModel) -> str:
         # noinspection PyTypeHints

@@ -137,7 +137,6 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await db[Flavor].find_one(caramel.id))
 
     async def test_insert_and_find_orm(self) -> None:
-        # Insert record.
         mocha = Flavor(name="mocha")
         await db[Flavor].insert(mocha)
         vanilla = Flavor(name="vanilla")
@@ -152,7 +151,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
             size=Vector3()
         )
         await db[Coffee].insert(coffee)
-        # Find new record and compare.
+        # Find record and compare.
         self.assertDictEqual(
             coffee.dict(), (await db[Coffee].find_one(coffee.id, depth=1)).dict()
         )
