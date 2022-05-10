@@ -66,7 +66,6 @@ class PyDB:
         for tablename, table_data in self._schema.items():
             # noinspection PyTypeChecker
             self._crud_generators[table_data.model] = CRUDGenerator(
-                table_data.model,
                 tablename,
                 self._engine,
                 self._schema,

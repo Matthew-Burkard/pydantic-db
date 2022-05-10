@@ -23,7 +23,7 @@ class Vector3(BaseModel):
     z: float = 1.0
 
 
-@db.table(pk="id", indexed=["strength"])
+@db.table("flavors", pk="id", indexed=["strength"])
 class Flavor(BaseModel):
     """A coffee flavor."""
 
@@ -57,7 +57,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_table_creation(self) -> None:
         # TODO Get all tables.
-        self.assertEqual(["coffee", "flavor"], ["coffee", "flavor"])
+        self.assertEqual(["coffee", "flavors"], ["coffee", "flavors"])
 
     async def test_find_nothing(self) -> None:
         self.assertEqual(None, (await db[Flavor].find_one(uuid4())))

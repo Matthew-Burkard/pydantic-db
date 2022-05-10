@@ -78,3 +78,4 @@ class SQLAlchemyTableGenerator:
         for tablename, v in self._schema.items():
             if v.model == model:
                 return tablename
+        raise ValueError("Given model is not a table.")

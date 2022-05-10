@@ -44,19 +44,16 @@ class CRUDGenerator(Generic[ModelType]):
 
     def __init__(
         self,
-        pydantic_model: ModelType,
         tablename: str,
         engine: AsyncEngine,
         schema: dict[str, PyDBTableMeta],
     ) -> None:
         """Provides DB CRUD methods for a model type.
 
-        :param pydantic_model: Model to create CRUD methods for.
         :param tablename: Name of the corresponding database table.
         :param engine: A SQL Alchemy async engine.
         :param schema: Map of tablename to table information objects.
         """
-        self._pydantic_model = pydantic_model
         self._tablename = tablename
         self._table = Table(tablename)
         self._engine = engine
@@ -155,7 +152,9 @@ class CRUDGenerator(Generic[ModelType]):
             update.
         :return: The inserted or updated model.
         """
-        if model := await self.find_one(model_instance.id):
+        if model := await self.find_one(
+            model_instance.__dict__[self._schema[self._tablename].pk]
+        ):
             if model == model_instance:
                 return model
             return await self.update(model_instance)
@@ -164,7 +163,9 @@ class CRUDGenerator(Generic[ModelType]):
     async def delete(self, pk: Any) -> bool:
         """Delete a record."""
         await self._execute(
-            Query.from_(self._table).where(self._table.id == pk).delete()
+            Query.from_(self._table)
+            .where(self._table.field(self._schema[self._tablename].pk) == pk)
+            .delete()
         )
         return True
 
@@ -225,7 +226,8 @@ class CRUDGenerator(Generic[ModelType]):
                 relation_name = f"{table_tree}/{field_name.removesuffix('_id')}"
                 rel_table = Table(tablename).as_(relation_name)
                 query = query.left_join(rel_table).on(
-                    pypika_table.field(field_name) == rel_table.id
+                    pypika_table.field(field_name)
+                    == rel_table.field(self._schema[tablename].pk)
                 )
                 columns.extend(
                     [
@@ -269,7 +271,7 @@ class CRUDGenerator(Generic[ModelType]):
         model_type: Type[ModelType] | None = None,
         table_tree: str | None = None,
     ) -> ModelType:
-        model_type = model_type or self._pydantic_model
+        model_type = model_type or self._schema[self._tablename].model
         table_tree = table_tree or self._tablename
         py_type = {}
         schema_info = self._schema[self._tablename_from_model(model_type)]
@@ -296,13 +298,13 @@ class CRUDGenerator(Generic[ModelType]):
                 py_type[column_name] = self._sql_type_to_py(
                     model_type, column_name, value
                 )
-        return model_type(**py_type)
+        return model_type(**py_type)  # type: ignore
 
     def _tablename_from_model_instance(self, model: BaseModel) -> str:
         # noinspection PyTypeHints
         return [k for k, v in self._schema.items() if isinstance(model, v.model)][0]
 
-    def _tablename_from_model(self, model: BaseModel) -> str:
+    def _tablename_from_model(self, model: Type[ModelType]) -> str:
         return [k for k, v in self._schema.items() if v.model == model][0]
 
     def _py_type_to_sql(self, value: Any) -> Any:
@@ -320,7 +322,7 @@ class CRUDGenerator(Generic[ModelType]):
         return value
 
     @staticmethod
-    def _sql_type_to_py(model: BaseModel, column: str, value: Any) -> Any:
+    def _sql_type_to_py(model: Type[ModelType], column: str, value: Any) -> Any:
         if value is None:
             return None
         if model.__fields__[column].type_ in [dict, list]:
