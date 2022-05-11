@@ -22,6 +22,7 @@ class PyDB:
         self._crud_generators: dict[Type, CRUDGenerator] = {}
         self._schema: dict[str, PyDBTableMeta] = {}
         self._engine = engine
+        self.metadata: MetaData | None = None
 
     def __getitem__(self, item: Type[ModelType]) -> CRUDGenerator[ModelType]:
         return self._crud_generators[item]
@@ -64,6 +65,7 @@ class PyDB:
     async def init(self) -> None:
         """Generate database tables from PyDB models."""
         self._populate_columns_and_relationships()
+        self.metadata = MetaData()
         for tablename, table_data in self._schema.items():
             # noinspection PyTypeChecker
             self._crud_generators[table_data.model] = CRUDGenerator(
@@ -71,7 +73,7 @@ class PyDB:
                 self._engine,
                 self._schema,
             )
-        await SQLAlchemyTableGenerator(self._engine, self._schema).init()
+        await SQLAlchemyTableGenerator(self._engine, self.metadata, self._schema).init()
 
     def _populate_columns_and_relationships(self) -> None:
         for tablename, table_data in self._schema.items():

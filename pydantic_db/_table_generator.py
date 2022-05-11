@@ -23,16 +23,21 @@ from pydantic_db._table import PyDBTableMeta
 class SQLAlchemyTableGenerator:
     """Generate SQL Alchemy tables from pydantic models."""
 
-    def __init__(self, engine: AsyncEngine, schema: dict[str, PyDBTableMeta]) -> None:
+    def __init__(
+        self, engine: AsyncEngine, metadata: MetaData, schema: dict[str, PyDBTableMeta]
+    ) -> None:
         self._engine = engine
+        self._metadata = metadata
         self._schema = schema
-        self._metadata = MetaData()
 
     async def init(self) -> None:
         """Generate SQL Alchemy tables."""
         for tablename, table_data in self._schema.items():
             constraints = [
-                [f"{c}_id" if f"{c}_id" in table_data.relationships else c for c in cols]
+                [
+                    f"{c}_id" if f"{c}_id" in table_data.relationships else c
+                    for c in cols
+                ]
                 for cols in table_data.unique_constraints
             ]
             unique_constraints = (
@@ -46,8 +51,6 @@ class SQLAlchemyTableGenerator:
                 *unique_constraints,
             )
         async with self._engine.begin() as conn:
-            # TODO Remove drop_all
-            await conn.run_sync(self._metadata.drop_all)
             await conn.run_sync(self._metadata.create_all)
 
     def _get_columns(

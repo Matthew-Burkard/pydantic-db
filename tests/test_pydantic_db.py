@@ -59,7 +59,12 @@ Flavor.update_forward_refs()
 class PyDBTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         """Setup clean sqlite database."""
-        asyncio.get_event_loop().run_until_complete(db.init())
+        async def _init() -> None:
+            await db.init()
+            async with engine.begin() as conn:
+                await conn.run_sync(db.metadata.drop_all)
+                await conn.run_sync(db.metadata.create_all)
+        asyncio.run(_init())
 
     async def test_table_creation(self) -> None:
         # TODO Get all tables.
