@@ -52,6 +52,22 @@ class Coffee(BaseModel):
     size: Vector3
 
 
+@db.table(pk="id")
+class One(BaseModel):
+    """One will have many "Many"."""
+
+    id: UUID = Field(default_factory=uuid4)
+    many_one: list[Many]
+    many_two: list[Many]
+
+
+@db.table(pk="id")
+class Many(BaseModel):
+    """Has a "One" parent."""
+
+    id: UUID = Field(default_factory=uuid4)
+
+
 Flavor.update_forward_refs()
 
 
@@ -162,3 +178,8 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         self.assertDictEqual(
             coffee.dict(), (await db[Coffee].find_one(coffee.id, depth=1)).dict()
         )
+
+    async def test_one_to_many(self) -> None:
+        one = One(many_one=[Many(), Many()], many_two=[Many(), Many(), Many()])
+        await db[One].insert(one)
+        self.assertTrue(True)

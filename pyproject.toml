@@ -1,9 +1,10 @@
 [tool.poetry]
 name = "pydantic-db"
-version = "0.19.4"
+version = "0.19.5"
 description = "An asynchronous ORM that uses pydantic models."
 repository = "https://gitlab.com/mburkard/pydantic-db"
 homepage = "https://gitlab.com/mburkard/pydantic-db"
+license = "AGPL-3.0-or-later"
 authors = ["Matthew Burkard <matthewjburkard@gmail.com>"]
 
 [tool.poetry.dependencies]
