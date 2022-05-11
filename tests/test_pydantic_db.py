@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 from pypika import Order
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.pydb import PyDB
