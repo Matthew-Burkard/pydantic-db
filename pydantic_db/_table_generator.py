@@ -12,6 +12,7 @@ from sqlalchemy import (  # type: ignore
     MetaData,
     String,
     Table,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects import postgresql  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
@@ -30,7 +31,20 @@ class SQLAlchemyTableGenerator:
     async def init(self) -> None:
         """Generate SQL Alchemy tables."""
         for tablename, table_data in self._schema.items():
-            Table(tablename, self._metadata, *self._get_columns(table_data))
+            constraints = [
+                [f"{c}_id" if f"{c}_id" in table_data.relationships else c for c in cols]
+                for cols in table_data.unique_constraints
+            ]
+            unique_constraints = (
+                UniqueConstraint(*cols, name=f"{'_'.join(cols)}_constraint")
+                for cols in constraints
+            )
+            Table(
+                tablename,
+                self._metadata,
+                *self._get_columns(table_data),
+                *unique_constraints,
+            )
         async with self._engine.begin() as conn:
             # TODO Remove drop_all
             await conn.run_sync(self._metadata.drop_all)

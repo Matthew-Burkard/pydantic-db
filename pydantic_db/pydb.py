@@ -26,13 +26,6 @@ class PyDB:
     def __getitem__(self, item: Type[ModelType]) -> CRUDGenerator[ModelType]:
         return self._crud_generators[item]
 
-    def get(self, model: Type[ModelType]) -> CRUDGenerator[ModelType] | None:
-        """Get CRUD generator or None.
-
-        :param model: Model to get generator for.
-        """
-        return self._crud_generators.get(model)
-
     def table(
         self,
         tablename: str | None = None,
@@ -40,6 +33,7 @@ class PyDB:
         pk: str,
         indexed: list[str] | None = None,
         unique: list[str] | None = None,
+        unique_constraints: list[list[str]] | None = None,
     ) -> Callable[[Type[ModelType]], Type[ModelType]]:
         """Make the decorated model a database table.
 
@@ -47,6 +41,7 @@ class PyDB:
         :param pk: Field name of table primary key.
         :param indexed: Names of fields to index.
         :param unique: Names of fields that must be unique.
+        :param unique_constraints: Fields that must be unique together.
         :return: The decorated class.
         """
 
@@ -58,6 +53,7 @@ class PyDB:
                 pk=pk,
                 indexed=indexed or [],
                 unique=unique or [],
+                unique_constraints=unique_constraints or [],
                 columns=[],
                 relationships={},
             )

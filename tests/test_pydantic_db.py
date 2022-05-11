@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 from pypika import Order
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.pydb import PyDB
@@ -23,7 +24,12 @@ class Vector3(BaseModel):
     z: float = 1.0
 
 
-@db.table("flavors", pk="id", indexed=["strength"])
+@db.table(
+    "flavors",
+    pk="id",
+    indexed=["strength"],
+    unique_constraints=[["name", "strength"]],
+)
 class Flavor(BaseModel):
     """A coffee flavor."""
 
@@ -147,10 +153,19 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
             cream=0,
             place={"sum": 1},
             ice=["cubes"],
-            size=Vector3()
+            size=Vector3(),
         )
         await db[Coffee].insert(coffee)
         # Find record and compare.
         self.assertDictEqual(
             coffee.dict(), (await db[Coffee].find_one(coffee.id, depth=1)).dict()
         )
+
+    async def test_constraints(self) -> None:
+        flavor1 = Flavor(name="french vanilla", strength=1)
+        await db[Flavor].insert(flavor1)
+        try:
+            flavor2 = Flavor(name="french vanilla", strength=1)
+            await db[Flavor].insert(flavor2)
+        except IntegrityError:
+            self.assertTrue(True)
