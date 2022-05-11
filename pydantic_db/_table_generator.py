@@ -65,7 +65,12 @@ class SQLAlchemyTableGenerator:
             }
             if issubclass(v.type_, BaseModel):
                 if v.type_ in [it.model for it in self._schema.values()]:
-                    foreign_table = self._tablename_from_model(v.type_)
+                    # Get foreign table name from schema.
+                    foreign_table = [
+                        tablename
+                        for tablename, data in self._schema.items()
+                        if data.model == v.type_
+                    ][0]
                     pk = self._schema[foreign_table].pk
                     columns.append(
                         Column(f"{k}_id", ForeignKey(f"{foreign_table}.{pk}"), **kwargs)
@@ -88,9 +93,3 @@ class SQLAlchemyTableGenerator:
             elif v.type_ is list:
                 columns.append(Column(k, JSON, **kwargs))
         return tuple(columns)
-
-    def _tablename_from_model(self, model: Any) -> str:
-        for tablename, v in self._schema.items():
-            if v.model == model:
-                return tablename
-        raise ValueError("Given model is not a table.")

@@ -59,16 +59,14 @@ Flavor.update_forward_refs()
 class PyDBTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         """Setup clean sqlite database."""
+
         async def _init() -> None:
             await db.init()
             async with engine.begin() as conn:
                 await conn.run_sync(db.metadata.drop_all)
                 await conn.run_sync(db.metadata.create_all)
-        asyncio.run(_init())
 
-    async def test_table_creation(self) -> None:
-        # TODO Get all tables.
-        self.assertEqual(["coffee", "flavors"], ["coffee", "flavors"])
+        asyncio.run(_init())
 
     async def test_find_nothing(self) -> None:
         self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
@@ -124,7 +122,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_upsert(self) -> None:
         # Upsert record as insert.
-        flavor = await db[Flavor].insert(Flavor(name="vanilla"))
+        flavor = await db[Flavor].upsert(Flavor(name="vanilla"))
         await db[Flavor].upsert(flavor)
         # Find all "vanilla" record.
         flavors = await db[Flavor].find_many(where={"id": flavor.id})
@@ -165,12 +163,3 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         self.assertDictEqual(
             coffee.dict(), (await db[Coffee].find_one(coffee.id, depth=1)).dict()
         )
-
-    async def test_constraints(self) -> None:
-        flavor1 = Flavor(name="french vanilla", strength=1)
-        await db[Flavor].insert(flavor1)
-        try:
-            flavor2 = Flavor(name="french vanilla", strength=1)
-            await db[Flavor].insert(flavor2)
-        except IntegrityError:
-            self.assertTrue(True)
