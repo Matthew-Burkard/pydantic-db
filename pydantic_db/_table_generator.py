@@ -42,7 +42,7 @@ class SQLAlchemyTableGenerator:
         columns = []
         for k, v in table_data.model.__fields__.items():
             kwargs = {
-                "pk": k == table_data.pk,
+                "primary_key": k == table_data.pk,
                 "index": k in table_data.indexed,
                 "unique": k in table_data.unique,
             }
