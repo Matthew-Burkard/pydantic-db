@@ -62,6 +62,7 @@ class SQLAlchemyTableGenerator:
                 "primary_key": k == table_data.pk,
                 "index": k in table_data.indexed,
                 "unique": k in table_data.unique,
+                "nullable": not v.required,
             }
             if issubclass(v.type_, BaseModel):
                 if v.type_ in [it.model for it in self._schema.values()]:
