@@ -10,7 +10,7 @@ from pydantic_db._types import ModelType
 
 # PyCharm thinks auto() takes an argument.
 # noinspection PyArgumentList
-class RelationshipType(Enum):
+class RelationType(Enum):
     """Table relationship types."""
 
     ONE_TO_MANY = auto()
@@ -22,7 +22,7 @@ class Relation(BaseModel):
 
     foreign_table: str
     back_references: str | None = None
-    type: RelationshipType
+    relation_type: RelationType
 
 
 class PyDBTableMeta(GenericModel, Generic[ModelType]):

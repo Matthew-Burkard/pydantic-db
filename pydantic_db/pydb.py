@@ -1,14 +1,16 @@
 """Module providing PyDB and Column classes."""
-from typing import Callable, get_origin, Type
+from typing import Callable, ForwardRef, get_origin, Type
 
 import caseswitcher
 from sqlalchemy import MetaData  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
+import typing
 from pydantic_db._crud_generator import CRUDGenerator
-from pydantic_db._table import PyDBTableMeta, Relation, RelationshipType
+from pydantic_db._table import PyDBTableMeta, Relation, RelationType
 from pydantic_db._table_generator import SQLAlchemyTableGenerator
 from pydantic_db._types import ModelType
+from pydantic_db.errors import ConfigurationError
 
 
 class PyDB:
@@ -19,10 +21,10 @@ class PyDB:
 
         :param engine: A SQL Alchemy async engine.
         """
+        self.metadata: MetaData | None = None
         self._crud_generators: dict[Type, CRUDGenerator] = {}
         self._schema: dict[str, PyDBTableMeta] = {}
         self._engine = engine
-        self.metadata: MetaData | None = None
 
     def __getitem__(self, item: Type[ModelType]) -> CRUDGenerator[ModelType]:
         return self._crud_generators[item]
@@ -89,25 +91,43 @@ class PyDB:
                     related_table = [
                         t for t in self._schema.values() if t.model == v.type_
                     ][0]
-                    if get_origin(v.outer_type_) != list:
+                    origin = get_origin(v.outer_type_)
+                    if origin != list and not v.outer_type_ == ForwardRef(
+                        f"list[{table_data.model.__name__}]"
+                    ):
                         columns.append(f"{k}_id")
                         relationships[f"{k}_id"] = Relation(
                             foreign_table=related_table.name,
-                            type=RelationshipType.ONE_TO_MANY,
+                            relation_type=RelationType.ONE_TO_MANY,
                         )
                     else:
+                        back_reference = table_data.back_references.get(k)
+                        if not back_reference:
+                            raise self._get_configuration_error(
+                                tablename, related_table.name, k
+                            )
                         back_referenced_field = related_table.model.__fields__[
-                            related_table.back_references[k]
+                            back_reference
                         ]
+                        # Is the back referenced field also a list?
                         many = get_origin(back_referenced_field.outer_type_) == list
                         relationships[k] = Relation(
                             foreign_table=related_table.name,
-                            type=RelationshipType.ONE_TO_MANY
+                            relation_type=RelationType.ONE_TO_MANY
                             if many
-                            else RelationshipType.MANY_TO_MANY,
+                            else RelationType.MANY_TO_MANY,
                             back_references=k,
                         )
                 else:
                     columns.append(k)
             table_data.columns = columns
             table_data.relationships = relationships
+
+    @staticmethod
+    def _get_configuration_error(
+        table_a: str, table_b: str, field: str
+    ) -> ConfigurationError:
+        return ConfigurationError(
+            f'Many relation defined from field "{field}" on table "{table_a}" to table'
+            f' "{table_b}" must be back-referenced from table "{table_a}"'
+        )

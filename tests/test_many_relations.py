@@ -14,7 +14,7 @@ engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
 db = PyDB(engine)
 
 
-@db.table(pk="id")
+@db.table(pk="id", back_references={"many_a": "one_a", "many_b": "one_b"})
 class One(BaseModel):
     """One will have many "Many"."""
 
@@ -32,7 +32,7 @@ class Many(BaseModel):
     one_b: One
 
 
-@db.table(pk="id")
+@db.table(pk="id", back_references={"many": "many"})
 class ManyToManyA(BaseModel):
     """Has many-to-many relationship with ManyToManyB."""
 
@@ -40,7 +40,7 @@ class ManyToManyA(BaseModel):
     many: list[ManyToManyB] | None = None
 
 
-@db.table(pk="id")
+@db.table(pk="id", back_references={"many": "many"})
 class ManyToManyB(BaseModel):
     """Has many-to-many relationship with ManyToManyA."""
 
@@ -48,10 +48,19 @@ class ManyToManyB(BaseModel):
     many: list[ManyToManyA]
 
 
+@db.table(pk="id", back_references={"many": "many"})
+class ManyToSelf(BaseModel):
+    """Has many-to-many relationship with ManyToManyA."""
+
+    id: UUID = Field(default_factory=uuid4)
+    many: list[ManyToSelf]
+
+
 One.update_forward_refs()
 Many.update_forward_refs()
 ManyToManyA.update_forward_refs()
 ManyToManyB.update_forward_refs()
+ManyToSelf.update_forward_refs()
 
 
 class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):

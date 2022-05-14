@@ -14,6 +14,9 @@ from sqlalchemy.orm import sessionmaker  # type: ignore
 
 from pydantic_db._table import PyDBTableMeta
 from pydantic_db._types import ModelType
+from pydantic_db._util import tablename_from_model
+
+__all__ = ("CRUDGenerator",)
 
 
 class Result(GenericModel, Generic[ModelType]):
@@ -260,7 +263,7 @@ class CRUDGenerator(Generic[ModelType]):
         model_type = model_type or self._schema[self._tablename].model
         table_tree = table_tree or self._tablename
         py_type = {}
-        schema_info = self._schema[self._tablename_from_model(model_type)]
+        schema_info = self._schema[tablename_from_model(model_type, self._schema)]
         for column, value in row_mapping.items():
             if not column.startswith(f"{table_tree}//"):
                 # This must be a column somewhere else in the tree.
@@ -291,9 +294,6 @@ class CRUDGenerator(Generic[ModelType]):
     def _tablename_from_model_instance(self, model: BaseModel) -> str:
         # noinspection PyTypeHints
         return [k for k, v in self._schema.items() if isinstance(model, v.model)][0]
-
-    def _tablename_from_model(self, model: Type[ModelType]) -> str:
-        return [k for k, v in self._schema.items() if v.model == model][0]
 
     def _py_type_to_sql(self, value: Any) -> Any:
         if self._engine.name != "postgres" and isinstance(value, UUID):
