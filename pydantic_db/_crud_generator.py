@@ -145,7 +145,7 @@ class CRUDGenerator(Generic[ModelType]):
         await self._execute(Query.into(self._table).columns(*columns).insert(*values))
         return model_instance
 
-    async def update(self, model_instance: ModelType) -> ModelType:  # TODO
+    async def update(self, model_instance: ModelType) -> ModelType:
         """Update a record.
 
         :param model_instance: Model representing record to update.
@@ -227,22 +227,26 @@ class CRUDGenerator(Generic[ModelType]):
             if table.name != table_tree:
                 pypika_table = pypika_table.as_(table_tree)
             # For each related table, add join to query.
-            for field_name, tablename in relationships.items():
+            for field_name, relation in relationships.items():
                 relation_name = f"{table_tree}/{field_name.removesuffix('_id')}"
-                rel_table = Table(tablename).as_(relation_name)
+                rel_table = Table(relation.foreign_table).as_(relation_name)
                 query = query.left_join(rel_table).on(
                     pypika_table.field(field_name)
-                    == rel_table.field(self._schema[tablename].pk)
+                    == rel_table.field(self._schema[relation.foreign_table].pk)
                 )
                 columns.extend(
                     [
                         rel_table.field(c).as_(f"{relation_name}//{c}")
-                        for c in self._schema[tablename].columns
+                        for c in self._schema[relation.foreign_table].columns
                     ]
                 )
                 # Add joins of relations of this table to query.
                 query, new_cols = self._build_joins(
-                    query, self._schema[tablename], depth, columns, relation_name
+                    query,
+                    self._schema[relation.foreign_table],
+                    depth,
+                    columns,
+                    relation_name,
                 )
                 columns.extend([c for c in new_cols if c not in columns])
         return query, columns
@@ -266,7 +270,9 @@ class CRUDGenerator(Generic[ModelType]):
                 if value is None:
                     # No further depth has been found.
                     continue
-                foreign_table = self._schema[schema_info.relationships[column_name]]
+                foreign_table = self._schema[
+                    schema_info.relationships[column_name].foreign_table
+                ]
                 py_type[column_name.removesuffix("_id")] = self._model_from_row_mapping(
                     row_mapping={
                         k.removeprefix(f"{table_tree}/"): v

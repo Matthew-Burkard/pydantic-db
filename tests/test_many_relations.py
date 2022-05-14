@@ -32,6 +32,28 @@ class Many(BaseModel):
     one_b: One
 
 
+@db.table(pk="id")
+class ManyToManyA(BaseModel):
+    """Has many-to-many relationship with ManyToManyB."""
+
+    id: UUID = Field(default_factory=uuid4)
+    many: list[ManyToManyB] | None = None
+
+
+@db.table(pk="id")
+class ManyToManyB(BaseModel):
+    """Has many-to-many relationship with ManyToManyA."""
+
+    id: UUID = Field(default_factory=uuid4)
+    many: list[ManyToManyA]
+
+
+One.update_forward_refs()
+Many.update_forward_refs()
+ManyToManyA.update_forward_refs()
+ManyToManyB.update_forward_refs()
+
+
 class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         """Setup clean sqlite database."""
@@ -44,7 +66,7 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
 
         asyncio.run(_init())
 
-    async def test_one_to_many(self) -> None:
+    async def test_one_to_many_insert_and_get(self) -> None:
         one_a = One()
         await db[One].insert(one_a)
         one_b = One()
@@ -62,3 +84,17 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         self.assertListEqual(many_b, find_one_a.many_b)
         many_a_idx_zero = await db[Many].find_one(many_a[0].pk, depth=3)
         self.assertDictEqual(find_one_a.dict(), many_a_idx_zero.one_a.dict())
+
+    async def test_one_to_many_update(self) -> None:
+        pass
+
+    async def test_many_to_many_insert_and_get(self) -> None:
+        many_a = [ManyToManyA(), ManyToManyA()]
+        for many in many_a:
+            await db[ManyToManyA].insert(many)
+        many_b = ManyToManyB(many=many_a)
+        await db[ManyToManyB].insert(many_b)
+        find_b = await db[ManyToManyB].find_one(many_b.id, depth=2)
+        self.assertDictEqual(many_b.dict(), find_b.dict())
+        find_a = await db[ManyToManyA].find_one(many_a[0].id, depth=3)
+        self.assertDictEqual(find_a.many[0].dict(), find_b.dict())
