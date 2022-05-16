@@ -68,13 +68,8 @@ class SQLAlchemyTableGenerator:
             }
             if issubclass(v.type_, BaseModel):
                 # Get foreign table name from schema.
-                foreign_table = tablename_from_model(v, self._schema)
                 if back_reference := table_data.back_references.get(k):
-                    try:
-                        table_data.relationships[k]
-                    except KeyError:
-                        print(k)
-                        print(table_data.relationships)
+                    foreign_table = tablename_from_model(v.type_, self._schema)
                     if (
                         table_data.relationships[k].relation_type
                         != RelationType.MANY_TO_MANY
@@ -92,6 +87,7 @@ class SQLAlchemyTableGenerator:
                         *self._get_mtm_columns(table_data.name, foreign_table),
                     )
                 if v.type_ in [it.model for it in self._schema.values()]:
+                    foreign_table = tablename_from_model(v.type_, self._schema)
                     foreign_data = self._schema[foreign_table]
                     columns.append(
                         Column(
