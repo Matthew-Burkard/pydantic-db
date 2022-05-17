@@ -32,28 +32,31 @@ class Many(BaseModel):
     one_b: One
 
 
-@db.table(pk="id", back_references={"many": "many"})
+@db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
 class ManyToManyA(BaseModel):
     """Has many-to-many relationship with ManyToManyB."""
 
     id: UUID = Field(default_factory=uuid4)
     many: list[ManyToManyB] | None = None
+    many_two: list[ManyToManyB] | None = None
 
 
-@db.table(pk="id", back_references={"many": "many"})
+@db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
 class ManyToManyB(BaseModel):
     """Has many-to-many relationship with ManyToManyA."""
 
     id: UUID = Field(default_factory=uuid4)
     many: list[ManyToManyA]
+    many_two: list[ManyToManyA] | None = None
 
 
-@db.table(pk="id", back_references={"many": "many"})
+@db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
 class ManyToSelf(BaseModel):
     """Has many-to-many relationship with ManyToManyA."""
 
     id: UUID = Field(default_factory=uuid4)
-    many: list[ManyToSelf]
+    many: list[ManyToSelf] | None = None
+    many_two: list[ManyToSelf] | None = None
 
 
 One.update_forward_refs()
