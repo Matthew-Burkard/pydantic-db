@@ -76,11 +76,11 @@ class SQLAlchemyTableGenerator:
                     ):
                         # This field is not a column.
                         continue
-                    if self._mtm.get(table_data.name) == k:
+                    if self._mtm.get(f"{table_data.name}.{back_reference}") == k:
                         # This mtm has already been made.
                         continue
                     # Create joining table.
-                    self._mtm[foreign_table] = back_reference
+                    self._mtm[f"{foreign_table}.{k}"] = back_reference
                     mtm_tablename = get_joining_tablename(
                         table=table_data.name,
                         column=k,
