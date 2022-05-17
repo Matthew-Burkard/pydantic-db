@@ -102,8 +102,15 @@ class PyDB:
             if not (related_table := self._model_to_metadata.get(field_info.type_)):
                 columns.append(field_name)
                 continue
-            origin = get_origin(field_info.outer_type_)
+            # Check if back-reference is present but mismatched in type.
+            back_reference = table_data.back_references.get(field_name)
+            back_referenced_field = related_table.model.__fields__.get(back_reference)
+            if back_reference and table_data.model != back_referenced_field.type_:
+                raise MismatchingBackReferenceError(
+                    tablename, related_table.name, field_name, back_reference
+                )
             # If this is not a list of another table, add foreign key.
+            origin = get_origin(field_info.outer_type_)
             if origin != list and field_info.outer_type_ != ForwardRef(
                 f"list[{table_data.model.__name__}]"
             ):
@@ -113,15 +120,10 @@ class PyDB:
                     relation_type=RelationType.ONE_TO_MANY,
                 )
                 continue
-            back_reference = table_data.back_references.get(field_name)
+            # MTM Must have a back-reference.
             if not back_reference:
                 raise UndefinedBackReferenceError(
                     tablename, related_table.name, field_name
-                )
-            back_referenced_field = related_table.model.__fields__[back_reference]
-            if table_data.model != back_referenced_field.type_:
-                raise MismatchingBackReferenceError(
-                    tablename, related_table.name, field_name, back_reference
                 )
             # Is the back referenced field also a list?
             is_mtm = get_origin(back_referenced_field.outer_type_) == list
