@@ -92,6 +92,7 @@ class SQLAlchemyTableGenerator:
                         self._metadata,
                         *self._get_mtm_columns(table_data.name, foreign_table),
                     )
+                    continue
                 if v.type_ in [it.model for it in self._schema.values()]:
                     foreign_table = tablename_from_model(v.type_, self._schema)
                     foreign_data = self._schema[foreign_table]
