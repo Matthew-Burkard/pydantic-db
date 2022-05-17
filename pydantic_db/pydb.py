@@ -5,7 +5,6 @@ import caseswitcher
 from sqlalchemy import MetaData  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
-import typing
 from pydantic_db._crud_generator import CRUDGenerator
 from pydantic_db._table import PyDBTableMeta, Relation, RelationType
 from pydantic_db._table_generator import SQLAlchemyTableGenerator
@@ -113,9 +112,9 @@ class PyDB:
                         many = get_origin(back_referenced_field.outer_type_) == list
                         relationships[k] = Relation(
                             foreign_table=related_table.name,
-                            relation_type=RelationType.ONE_TO_MANY
+                            relation_type=RelationType.MANY_TO_MANY
                             if many
-                            else RelationType.MANY_TO_MANY,
+                            else RelationType.ONE_TO_MANY,
                             back_references=k,
                         )
                 else:
