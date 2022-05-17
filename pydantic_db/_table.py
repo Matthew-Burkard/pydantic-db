@@ -23,6 +23,7 @@ class Relation(BaseModel):
     foreign_table: str
     back_references: str | None = None
     relation_type: RelationType
+    mtm_table: str | None = None
 
 
 class PyDBTableMeta(GenericModel, Generic[ModelType]):

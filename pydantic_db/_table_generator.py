@@ -18,7 +18,7 @@ from sqlalchemy.dialects import postgresql  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
 from pydantic_db._table import PyDBTableMeta, RelationType
-from pydantic_db._util import get_joining_tablename, tablename_from_model
+from pydantic_db._util import tablename_from_model
 
 
 class SQLAlchemyTableGenerator:
@@ -81,14 +81,8 @@ class SQLAlchemyTableGenerator:
                         continue
                     # Create joining table.
                     self._mtm[f"{foreign_table}.{k}"] = back_reference
-                    mtm_tablename = get_joining_tablename(
-                        table=table_data.name,
-                        column=k,
-                        other_table=foreign_table,
-                        other_column=back_reference,
-                    )
                     Table(
-                        mtm_tablename,
+                        table_data.relationships[k].mtm_table,
                         self._metadata,
                         *self._get_mtm_columns(table_data.name, foreign_table),
                     )
