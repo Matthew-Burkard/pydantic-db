@@ -11,7 +11,10 @@ from pydantic_db._table import PyDBTableMeta, Relation, RelationType
 from pydantic_db._table_generator import SQLAlchemyTableGenerator
 from pydantic_db._types import ModelType
 from pydantic_db._util import get_joining_tablename
-from pydantic_db.errors import ConfigurationError
+from pydantic_db.errors import (
+    MismatchingBackReferenceError,
+    UndefinedBackReferenceError,
+)
 
 
 class PyDB:
@@ -76,7 +79,9 @@ class PyDB:
         """Generate database tables from PyDB models."""
         # Populate relation information.
         for tablename, table_data in self._schema.items():
-            self._populate_columns_and_relationships(tablename, table_data)
+            cols, rels = self._get_columns_and_relationships(tablename, table_data)
+            table_data.columns = cols
+            table_data.relationships = rels
         # Now that relation information is populated generate tables.
         self.metadata = MetaData()
         for tablename, table_data in self._schema.items():
@@ -88,9 +93,9 @@ class PyDB:
             )
         await SQLAlchemyTableGenerator(self._engine, self.metadata, self._schema).init()
 
-    def _populate_columns_and_relationships(
+    def _get_columns_and_relationships(
         self, tablename: str, table_data: PyDBTableMeta
-    ) -> None:
+    ) -> tuple[list[str], dict[str, Relation]]:
         columns = []
         relationships = {}
         for field_name, field_info in table_data.model.__fields__.items():
@@ -110,10 +115,14 @@ class PyDB:
                 continue
             back_reference = table_data.back_references.get(field_name)
             if not back_reference:
-                raise self._get_configuration_error(
+                raise UndefinedBackReferenceError(
                     tablename, related_table.name, field_name
                 )
             back_referenced_field = related_table.model.__fields__[back_reference]
+            if table_data.model != back_referenced_field.type_:
+                raise MismatchingBackReferenceError(
+                    tablename, related_table.name, field_name, back_reference
+                )
             # Is the back referenced field also a list?
             is_mtm = get_origin(back_referenced_field.outer_type_) == list
             relation_type = RelationType.ONE_TO_MANY
@@ -125,10 +134,7 @@ class PyDB:
                     mtm_tablename = rel.mtm_table
                 else:
                     mtm_tablename = get_joining_tablename(
-                        table=table_data.name,
-                        column=field_name,
-                        other_table=related_table.name,
-                        other_column=back_reference,
+                        table_data.name, field_name, related_table.name, back_reference
                     )
             relationships[field_name] = Relation(
                 foreign_table=related_table.name,
@@ -136,14 +142,4 @@ class PyDB:
                 back_references=field_name,
                 mtm_table=mtm_tablename,
             )
-        table_data.columns = columns
-        table_data.relationships = relationships
-
-    @staticmethod
-    def _get_configuration_error(
-        table_a: str, table_b: str, field: str
-    ) -> ConfigurationError:
-        return ConfigurationError(
-            f'Many relation defined from field "{field}" on table "{table_a}" to table'
-            f' "{table_b}" must be back-referenced from table "{table_a}"'
-        )
+        return columns, relationships
