@@ -16,8 +16,6 @@ from pydantic_db._table import PyDBTableMeta
 from pydantic_db._types import ModelType
 from pydantic_db._util import tablename_from_model
 
-__all__ = ("CRUDGenerator",)
-
 
 class Result(GenericModel, Generic[ModelType]):
     """Search result object."""
@@ -218,40 +216,45 @@ class CRUDGenerator(Generic[ModelType]):
     def _build_joins(
         self,
         query: QueryBuilder,
-        table: PyDBTableMeta,
+        table_data: PyDBTableMeta,
         depth: int,
         columns: list[Field],
         table_tree: str | None = None,
     ) -> tuple[QueryBuilder, list[Field]]:
-        if depth and (relationships := self._schema[table.name].relationships):
-            depth -= 1
-            table_tree = table_tree or table.name
-            pypika_table: Table = Table(table.name)
-            if table.name != table_tree:
-                pypika_table = pypika_table.as_(table_tree)
-            # For each related table, add join to query.
-            for field_name, relation in relationships.items():
-                relation_name = f"{table_tree}/{field_name.removesuffix('_id')}"
-                rel_table = Table(relation.foreign_table).as_(relation_name)
-                query = query.left_join(rel_table).on(
-                    pypika_table.field(field_name)
-                    == rel_table.field(self._schema[relation.foreign_table].pk)
-                )
-                columns.extend(
-                    [
-                        rel_table.field(c).as_(f"{relation_name}//{c}")
-                        for c in self._schema[relation.foreign_table].columns
-                    ]
-                )
-                # Add joins of relations of this table to query.
-                query, new_cols = self._build_joins(
-                    query,
-                    self._schema[relation.foreign_table],
-                    depth,
-                    columns,
-                    relation_name,
-                )
-                columns.extend([c for c in new_cols if c not in columns])
+        if depth <= 0:
+            return query, columns
+        if not (relationships := self._schema[table_data.name].relationships):
+            return query, columns
+        depth -= 1
+        table_tree = table_tree or table_data.name
+        pypika_table: Table = Table(table_data.name)
+        if table_data.name != table_tree:
+            pypika_table = pypika_table.as_(table_tree)
+        # For each related table, add join to query.
+        for field_name, relation in relationships.items():
+            if relation.back_references is not None:
+                continue
+            relation_name = f"{table_tree}/{field_name.removesuffix('_id')}"
+            rel_table = Table(relation.foreign_table).as_(relation_name)
+            query = query.left_join(rel_table).on(
+                pypika_table.field(field_name)
+                == rel_table.field(self._schema[relation.foreign_table].pk)
+            )
+            columns.extend(
+                [
+                    rel_table.field(c).as_(f"{relation_name}//{c}")
+                    for c in self._schema[relation.foreign_table].columns
+                ]
+            )
+            # Add joins of relations of this table to query.
+            query, new_cols = self._build_joins(
+                query,
+                self._schema[relation.foreign_table],
+                depth,
+                columns,
+                relation_name,
+            )
+            columns.extend([c for c in new_cols if c not in columns])
         return query, columns
 
     def _model_from_row_mapping(
