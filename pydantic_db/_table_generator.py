@@ -117,7 +117,6 @@ class SQLAlchemyTableGenerator:
         return tuple(columns)
 
     def _get_mtm_columns(self, table_a: str, table_b: str) -> list[Column]:
-        col_type = postgresql.UUID if self._engine.name == "postgres" else String(36)
         table_a_pk = self._schema[table_a].pk
         table_b_pk = self._schema[table_b].pk
         table_a_col_name = f"{table_a}_id"
@@ -126,14 +125,13 @@ class SQLAlchemyTableGenerator:
             table_a_col_name = f"{table_a}_a_id"
             table_b_col_name = f"{table_b}_b_id"
         columns = [
-            Column("id", col_type, primary_key=True),
             Column(
                 table_a_col_name,
-                ForeignKey(f"{table_a}.{table_a_pk}"),
+                ForeignKey(f"{table_a}.{table_a_pk}", primary_key=True),
             ),
             Column(
                 table_b_col_name,
-                ForeignKey(f"{table_b}.{table_b_pk}"),
+                ForeignKey(f"{table_b}.{table_b_pk}", primary_key=True),
             ),
         ]
         return columns
