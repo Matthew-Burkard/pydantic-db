@@ -156,6 +156,29 @@ class CRUDGenerator(Generic[ModelType]):
         )
         return True
 
+    async def _find_one(
+        self, tablename: str, pk: Any, depth: int = 0
+    ) -> ModelType | None:
+        table_data = self._schema[tablename]
+        table = Table(tablename)
+        query, columns = self._build_joins(
+            Query.from_(table),
+            table_data,
+            depth,
+            self._columns(table_data, tablename),
+        )
+        query = query.where(
+            table.field(table_data.pk) == self._py_type_to_sql(pk)
+        ).select(*columns)
+        result = await self._execute(query)
+        try:
+            # noinspection PyProtectedMember
+            return self._model_from_row_mapping(
+                next(result)._mapping, tablename=tablename
+            )
+        except StopIteration:
+            return None
+
     async def _insert(
         self, model_instance: ModelType, tablename: str, upsert_relations
     ):
@@ -213,29 +236,6 @@ class CRUDGenerator(Generic[ModelType]):
                 return model
             return await self.update(model_instance)
         return await self._insert(model_instance, tablename, upsert_relations)
-
-    async def _find_one(
-        self, tablename: str, pk: Any, depth: int = 0
-    ) -> ModelType | None:
-        table_data = self._schema[tablename]
-        table = Table(tablename)
-        query, columns = self._build_joins(
-            Query.from_(table),
-            table_data,
-            depth,
-            self._columns(table_data, tablename),
-        )
-        query = query.where(
-            table.field(table_data.pk) == self._py_type_to_sql(pk)
-        ).select(*columns)
-        result = await self._execute(query)
-        try:
-            # noinspection PyProtectedMember
-            return self._model_from_row_mapping(
-                next(result)._mapping, tablename=tablename
-            )
-        except StopIteration:
-            return None
 
     async def _upsert_relations(
         self, model_instance: ModelType, table_data: PyDBTableMeta
