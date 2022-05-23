@@ -16,7 +16,7 @@ PyPika = "^0.48.9"
 
 [tool.poetry.dev-dependencies]
 mypy = "^0.950"
-coverage = "^6.3.3"
+coverage = "^6.4"
 aiosqlite = "^0.17.0"
 
 [build-system]
