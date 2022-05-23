@@ -52,6 +52,13 @@ class Coffee(BaseModel):
     size: Vector3
 
 
+@db.table(pk="id")
+class PlainTable(BaseModel):
+    """Drink it in the morning."""
+
+    id: UUID = Field(default_factory=uuid4)
+
+
 Flavor.update_forward_refs()
 
 
@@ -70,6 +77,15 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
     async def test_find_nothing(self) -> None:
         self.assertEqual(None, (await db[Flavor].find_one(uuid4())))
         self.assertEqual(None, (await db[Coffee].find_one(uuid4(), depth=3)))
+
+    async def test_no_relation_insert_and_fine_one(self) -> None:
+        # Insert record.
+        record = PlainTable()
+        find = await db[PlainTable].insert(record)
+        # Find new record and compare.
+        self.assertDictEqual(
+            find.dict(), (await db[PlainTable].find_one(find.id, 1)).dict()
+        )
 
     async def test_insert_and_find_one(self) -> None:
         # Insert record.
@@ -145,9 +161,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_insert_and_find_orm(self) -> None:
         mocha = Flavor(name="mocha")
-        await db[Flavor].insert(mocha)
         vanilla = Flavor(name="vanilla")
-        await db[Flavor].insert(vanilla)
         coffee = Coffee(
             primary_flavor=mocha,
             secondary_flavor=vanilla,

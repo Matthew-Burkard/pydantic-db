@@ -55,7 +55,6 @@ class CRUDGenerator(Generic[ModelType]):
         :param schema: Map of tablename to table information objects.
         """
         self._tablename = tablename
-        self._table = Table(tablename)
         self._engine = engine
         self._schema = schema
         self._field_to_column: dict[Any, str] = {}
@@ -67,22 +66,7 @@ class CRUDGenerator(Generic[ModelType]):
         :param depth: ORM fetch depth.
         :return: A model representing the record if it exists else None.
         """
-        table_data = self._schema[self._tablename]
-        query, columns = self._build_joins(
-            Query.from_(self._table),
-            table_data,
-            depth,
-            self._columns(table_data),
-        )
-        query = query.where(
-            self._table.field(table_data.pk) == self._py_type_to_sql(pk)
-        ).select(*columns)
-        result = await self._execute(query)
-        try:
-            # noinspection PyProtectedMember
-            return self._model_from_row_mapping(next(result)._mapping)
-        except StopIteration:
-            return None
+        return await self._find_one(self._tablename, pk, depth)
 
     async def find_many(
         self,
@@ -103,17 +87,18 @@ class CRUDGenerator(Generic[ModelType]):
         :param depth: Depth of relations to populate.
         :return: A list of models representing table records.
         """
+        table = Table(self._tablename)
         where = where or {}
         order_by = order_by or []
         pydb_table = self._schema[self._tablename]
         query, columns = self._build_joins(
-            Query.from_(self._table),
+            Query.from_(table),
             pydb_table,
             depth,
             self._columns(pydb_table),
         )
         for field, value in where.items():
-            query = query.where(self._table.field(field) == value)
+            query = query.where(table.field(field) == value)
         query = query.orderby(*order_by, order=order).select(*columns)
         if limit:
             query = query.limit(limit)
@@ -127,74 +112,139 @@ class CRUDGenerator(Generic[ModelType]):
             data=[self._model_from_row_mapping(row._mapping) for row in result],
         )
 
-    async def insert(self, model_instance: ModelType) -> ModelType:
+    async def insert(
+        self, model_instance: ModelType, upsert_relations: bool = True
+    ) -> ModelType:
         """Insert a record.
 
         :param model_instance: Instance to save as database record.
+        :param upsert_relations: Upsert related table data if True.
         :return: Inserted model.
         """
-        table_data = self._schema[self._tablename]
-        columns = [c for c in table_data.columns]
-        values = [
-            self._py_type_to_sql(
-                model_instance.__dict__[
-                    c.removesuffix("_id") if c in table_data.relationships else c
-                ]
-            )
-            for c in columns
-        ]
-        await self._execute(Query.into(self._table).columns(*columns).insert(*values))
-        return model_instance
+        return await self._insert(model_instance, self._tablename, upsert_relations)
 
-    async def update(self, model_instance: ModelType) -> ModelType:
+    async def update(
+        self, model_instance: ModelType, upsert_relations: bool = True
+    ) -> ModelType:
         """Update a record.
 
         :param model_instance: Model representing record to update.
+        :param upsert_relations: Upsert related table data if True.
         :return: The updated model.
         """
-        table_data = self._schema[self._tablename]
-        columns = [c for c in table_data.columns]
-        values = [
-            self._py_type_to_sql(
-                model_instance.__dict__[
-                    c.removesuffix("_id") if c in table_data.relationships else c
-                ]
-            )
-            for c in columns
-        ]
-        query = Query.update(self._table)
-        for i, column in enumerate(columns):
-            query = query.set(column, values[i])
-        pk = model_instance.__dict__[table_data.pk]
-        query = query.where(
-            self._table.field(table_data.pk) == self._py_type_to_sql(pk)
-        )
-        await self._execute(query)
-        return model_instance
+        return await self._update(model_instance, self._tablename, upsert_relations)
 
-    async def upsert(self, model_instance: ModelType) -> ModelType:
+    async def upsert(
+        self, model_instance: ModelType, upsert_relations: bool = True
+    ) -> ModelType:
         """Insert a record if it does not exist, else update it.
 
         :param model_instance: Model representing record to insert or
             update.
+        :param upsert_relations: Upsert related table data if True.
         :return: The inserted or updated model.
         """
-        if model := await self.find_one(
-            model_instance.__dict__[self._schema[self._tablename].pk]
+        return await self._upsert(model_instance, self._tablename, upsert_relations)
+
+    async def delete(self, pk: Any) -> bool:
+        """Delete a record."""
+        table = Table(self._tablename)
+        await self._execute(
+            Query.from_(table)
+            .where(table.field(self._schema[self._tablename].pk) == pk)
+            .delete()
+        )
+        return True
+
+    async def _insert(
+        self, model_instance: ModelType, tablename: str, upsert_relations
+    ):
+        # noinspection DuplicatedCode
+        table_data = self._schema[tablename]
+        table = Table(tablename)
+        if upsert_relations:
+            await self._upsert_relations(model_instance, table_data)
+        # Insert record.
+        values = [
+            self._py_type_to_sql(
+                model_instance.__dict__[
+                    c.removesuffix("_id") if c in table_data.relationships else c
+                ]
+            )
+            for c in table_data.columns
+        ]
+        await self._execute(
+            Query.into(table).columns(*table_data.columns).insert(*values)
+        )
+        return model_instance
+
+    async def _update(
+        self, model_instance: ModelType, tablename: str, upsert_relations: bool = True
+    ) -> ModelType:
+        # noinspection DuplicatedCode
+        table_data = self._schema[tablename]
+        table = Table(tablename)
+        if upsert_relations:
+            await self._upsert_relations(model_instance, table_data)
+        # Update record.
+        values = [
+            self._py_type_to_sql(
+                model_instance.__dict__[
+                    c.removesuffix("_id") if c in table_data.relationships else c
+                ]
+            )
+            for c in table_data.columns
+        ]
+        query = Query.update(table)
+        for i, column in enumerate(table_data.columns):
+            query = query.set(column, values[i])
+        pk = model_instance.__dict__[table_data.pk]
+        query = query.where(table.field(table_data.pk) == self._py_type_to_sql(pk))
+        await self._execute(query)
+        return model_instance
+
+    async def _upsert(
+        self, model_instance: ModelType, tablename: str, upsert_relations: bool
+    ) -> ModelType:
+        if model := await self._find_one(
+            tablename, model_instance.__dict__[self._schema[tablename].pk]
         ):
             if model == model_instance:
                 return model
             return await self.update(model_instance)
-        return await self.insert(model_instance)
+        return await self._insert(model_instance, tablename, upsert_relations)
 
-    async def delete(self, pk: Any) -> bool:
-        """Delete a record."""
-        await self._execute(
-            Query.from_(self._table)
-            .where(self._table.field(self._schema[self._tablename].pk) == pk)
-            .delete()
+    async def _find_one(
+        self, tablename: str, pk: Any, depth: int = 0
+    ) -> ModelType | None:
+        table_data = self._schema[tablename]
+        table = Table(tablename)
+        query, columns = self._build_joins(
+            Query.from_(table),
+            table_data,
+            depth,
+            self._columns(table_data, tablename),
         )
-        return True
+        query = query.where(
+            table.field(table_data.pk) == self._py_type_to_sql(pk)
+        ).select(*columns)
+        result = await self._execute(query)
+        try:
+            # noinspection PyProtectedMember
+            return self._model_from_row_mapping(
+                next(result)._mapping, tablename=tablename
+            )
+        except StopIteration:
+            return None
+
+    async def _upsert_relations(
+        self, model_instance: ModelType, table_data: PyDBTableMeta
+    ):
+        # Upsert relationships.
+        for rel in table_data.relationships:
+            if rel_model := model_instance.__dict__.get(rel.removesuffix("_id")):
+                tablename = tablename_from_model(type(rel_model), self._schema)
+                await self._upsert(rel_model, tablename, True)
 
     async def _execute(self, query: QueryBuilder) -> Any:
         async_session = sessionmaker(
@@ -207,11 +257,12 @@ class CRUDGenerator(Generic[ModelType]):
         await self._engine.dispose()
         return result
 
-    def _columns(self, pydb_table: PyDBTableMeta) -> list[Field]:
-        return [
-            self._table.field(c).as_(f"{self._tablename}//{c}")
-            for c in pydb_table.columns
-        ]
+    def _columns(
+        self, pydb_table: PyDBTableMeta, tablename: str | None = None
+    ) -> list[Field]:
+        tablename = tablename or self._tablename
+        table = Table(tablename)
+        return [table.field(c).as_(f"{tablename}//{c}") for c in pydb_table.columns]
 
     def _build_joins(
         self,
@@ -262,9 +313,11 @@ class CRUDGenerator(Generic[ModelType]):
         row_mapping: dict[str, Any],
         model_type: Type[ModelType] | None = None,
         table_tree: str | None = None,
+        tablename: str | None = None,
     ) -> ModelType:
-        model_type = model_type or self._schema[self._tablename].model
-        table_tree = table_tree or self._tablename
+        tablename = tablename or self._tablename
+        model_type = model_type or self._schema[tablename].model
+        table_tree = table_tree or tablename
         py_type = {}
         schema_info = self._schema[tablename_from_model(model_type, self._schema)]
         for column, value in row_mapping.items():
