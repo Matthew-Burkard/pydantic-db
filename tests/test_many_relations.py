@@ -80,9 +80,7 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_one_to_many_insert_and_get(self) -> None:
         one_a = One()
-        await db[One].insert(one_a)
         one_b = One()
-        await db[One].insert(one_b)
         many_a = [Many(one_a=one_a, one_b=one_b), Many(one_a=one_a, one_b=one_b)]
         many_b = [
             Many(one_a=one_a, one_b=one_b),
@@ -92,6 +90,7 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         for many in many_a + many_b:
             await db[Many].insert(many)
         find_one_a = await db[One].find_one(one_a.id, depth=2)
+        # print(find_one_a)
         self.assertListEqual(many_a, find_one_a.many_a)
         self.assertListEqual(many_b, find_one_a.many_b)
         many_a_idx_zero = await db[Many].find_one(many_a[0].pk, depth=3)
@@ -100,13 +99,13 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_to_many_update(self) -> None:
         pass
 
-    async def test_many_to_many_insert_and_get(self) -> None:
-        many_a = [ManyToManyA(), ManyToManyA()]
-        for many in many_a:
-            await db[ManyToManyA].insert(many)
-        many_b = ManyToManyB(many=many_a)
-        await db[ManyToManyB].insert(many_b)
-        find_b = await db[ManyToManyB].find_one(many_b.id, depth=2)
-        self.assertDictEqual(many_b.dict(), find_b.dict())
-        find_a = await db[ManyToManyA].find_one(many_a[0].id, depth=3)
-        self.assertDictEqual(find_a.many[0].dict(), find_b.dict())
+    # async def test_many_to_many_insert_and_get(self) -> None:
+    #     many_a = [ManyToManyA(), ManyToManyA()]
+    #     for many in many_a:
+    #         await db[ManyToManyA].insert(many)
+    #     many_b = ManyToManyB(many=many_a)
+    #     await db[ManyToManyB].insert(many_b)
+    #     find_b = await db[ManyToManyB].find_one(many_b.id, depth=2)
+    #     self.assertDictEqual(many_b.dict(), find_b.dict())
+    #     find_a = await db[ManyToManyA].find_one(many_a[0].id, depth=3)
+    #     self.assertDictEqual(find_a.many[0].dict(), find_b.dict())
