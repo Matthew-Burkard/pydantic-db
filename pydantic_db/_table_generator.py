@@ -127,11 +127,11 @@ class SQLAlchemyTableGenerator:
         columns = [
             Column(
                 table_a_col_name,
-                ForeignKey(f"{table_a}.{table_a_pk}", primary_key=True),
+                ForeignKey(f"{table_a}.{table_a_pk}"),
             ),
             Column(
                 table_b_col_name,
-                ForeignKey(f"{table_b}.{table_b_pk}", primary_key=True),
+                ForeignKey(f"{table_b}.{table_b_pk}"),
             ),
         ]
         return columns
