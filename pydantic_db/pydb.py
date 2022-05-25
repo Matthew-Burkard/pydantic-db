@@ -141,7 +141,7 @@ class PyDB:
             relationships[field_name] = Relation(
                 foreign_table=related_table.name,
                 relation_type=relation_type,
-                back_references=field_name,
+                back_references=back_reference,
                 mtm_table=mtm_tablename,
             )
         return columns, relationships
