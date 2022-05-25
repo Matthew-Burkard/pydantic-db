@@ -29,7 +29,7 @@ class Many(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     one_a: One
-    one_b: One
+    one_b: One | None = None
 
 
 @db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
@@ -81,7 +81,7 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_to_many_insert_and_get(self) -> None:
         one_a = One()
         one_b = One()
-        many_a = [Many(one_a=one_a, one_b=one_b), Many(one_a=one_a, one_b=one_b)]
+        many_a = [Many(one_a=one_a), Many(one_a=one_a)]
         many_b = [
             Many(one_a=one_a, one_b=one_b),
             Many(one_a=one_a, one_b=one_b),
@@ -90,10 +90,17 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         for many in many_a + many_b:
             await db[Many].insert(many)
         find_one_a = await db[One].find_one(one_a.id, depth=2)
-        # print(find_one_a)
-        self.assertListEqual(many_a, find_one_a.many_a)
-        self.assertListEqual(many_b, find_one_a.many_b)
-        many_a_idx_zero = await db[Many].find_one(many_a[0].pk, depth=3)
+        many_a_plus_b = many_a + many_b
+        many_a_plus_b.sort(key=lambda x: x.id)
+        find_one_a.many_a.sort(key=lambda x: x.id)
+        self.assertListEqual(many_a_plus_b, find_one_a.many_a)
+        self.assertListEqual([], find_one_a.many_b)
+        find_one_b = await db[One].find_one(one_b.id, depth=2)
+        many_b.sort(key=lambda x: x.id)
+        find_one_b.many_b.sort(key=lambda x: x.id)
+        self.assertListEqual(many_b, find_one_b.many_b)
+        self.assertListEqual([], find_one_b.many_a)
+        many_a_idx_zero = await db[Many].find_one(many_a[0].id, depth=3)
         self.assertDictEqual(find_one_a.dict(), many_a_idx_zero.one_a.dict())
 
     async def test_one_to_many_update(self) -> None:
