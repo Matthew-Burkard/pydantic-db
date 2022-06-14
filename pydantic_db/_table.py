@@ -36,5 +36,6 @@ class PyDBTableMeta(GenericModel, Generic[ModelType]):
     unique: list[str]
     unique_constraints: list[list[str]]
     columns: list[str]
+    # Column name to relation data.
     relationships: dict[str, Relation]
     back_references: dict[str, str]

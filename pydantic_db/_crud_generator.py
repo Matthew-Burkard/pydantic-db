@@ -451,18 +451,18 @@ class CRUDGenerator(Generic[ModelType]):
         model_type = model_type or self._schema[tablename].model
         table_tree = table_tree or tablename
         py_type = {}
-        schema_info = self._schema[tablename_from_model(model_type, self._schema)]
+        table_data = self._schema[tablename_from_model(model_type, self._schema)]
         for column, value in row_mapping.items():
             if not column.startswith(f"{table_tree}//"):
                 # This must be a column somewhere else in the tree.
                 continue
             column_name = column.removeprefix(f"{table_tree}//")
-            if column_name in schema_info.relationships:
+            if column_name in table_data.relationships:
                 if value is None:
                     # No further depth has been found.
                     continue
                 foreign_table = self._schema[
-                    schema_info.relationships[column_name].foreign_table
+                    table_data.relationships[column_name].foreign_table
                 ]
                 py_type[column_name.removesuffix("_id")] = self._model_from_row_mapping(
                     row_mapping={
@@ -477,7 +477,7 @@ class CRUDGenerator(Generic[ModelType]):
                 py_type[column_name] = self._sql_type_to_py(
                     model_type, column_name, value
                 )
-        return model_type.construct(**py_type)
+        return model_type.construct(values=py_type)
 
     def _tablename_from_model_instance(self, model: BaseModel) -> str:
         # noinspection PyTypeHints

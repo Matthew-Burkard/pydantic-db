@@ -119,11 +119,11 @@ class SQLAlchemyTableGenerator:
     def _get_mtm_columns(self, table_a: str, table_b: str) -> list[Column]:
         table_a_pk = self._schema[table_a].pk
         table_b_pk = self._schema[table_b].pk
-        table_a_col_name = f"{table_a}_id"
-        table_b_col_name = f"{table_b}_id"
+        table_a_col_name = table_a
+        table_b_col_name = table_b
         if table_a == table_b:
-            table_a_col_name = f"{table_a}_a_id"
-            table_b_col_name = f"{table_b}_b_id"
+            table_a_col_name = f"{table_a}_a"
+            table_b_col_name = f"{table_b}_b"
         columns = [
             Column(
                 table_a_col_name,
