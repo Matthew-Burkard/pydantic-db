@@ -1,5 +1,6 @@
 """Module providing PyDB and Column classes."""
-from typing import Callable, ForwardRef, get_origin, Type
+from types import UnionType
+from typing import Callable, ForwardRef, get_args, get_origin, Type
 
 import caseswitcher
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from pydantic_db._types import ModelType
 from pydantic_db._util import get_joining_tablename
 from pydantic_db.errors import (
     MismatchingBackReferenceError,
+    MustUnionForeignKeyError,
     UndefinedBackReferenceError,
 )
 
@@ -98,8 +100,17 @@ class PyDB:
     ) -> tuple[list[str], dict[str, Relation]]:
         columns = []
         relationships = {}
-        for field_name, field_info in table_data.model.__fields__.items():
-            if not (related_table := self._model_to_metadata.get(field_info.type_)):
+        related_table: PyDBTableMeta | None = None
+        for field_name, field in table_data.model.__fields__.items():
+            # Try to get foreign model from union.
+            if args := get_args(field.outer_type_):
+                for arg in args:
+                    related_table = self._model_to_metadata.get(arg)
+                    if related_table is not None:
+                        break
+            # Try to get foreign table from type.
+            related_table = related_table or self._model_to_metadata.get(field.type_)
+            if related_table is None:
                 columns.append(field_name)
                 continue
             # Check if back-reference is present but mismatched in type.
@@ -110,10 +121,21 @@ class PyDB:
                     tablename, related_table.name, field_name, back_reference
                 )
             # If this is not a list of another table, add foreign key.
-            origin = get_origin(field_info.outer_type_)
-            if origin != list and field_info.outer_type_ != ForwardRef(
+            origin = get_origin(field.outer_type_)
+            if origin != list and field.outer_type_ != ForwardRef(
                 f"list[{table_data.model.__name__}]"
             ):
+                correct_type = (
+                    related_table.model.__fields__[related_table.pk].type_ in args
+                )
+                if not args or not origin == UnionType or not correct_type:
+                    raise MustUnionForeignKeyError(
+                        tablename,
+                        related_table.name,
+                        field_name,
+                        related_table.model,
+                        related_table.model.__fields__[related_table.pk].type_.__name__,
+                    )
                 columns.append(f"{field_name}_id")
                 relationships[f"{field_name}_id"] = Relation(
                     foreign_table=related_table.name,

@@ -1,4 +1,5 @@
 """PyDB Errors."""
+from typing import Type
 
 
 class ConfigurationError(Exception):
@@ -28,4 +29,16 @@ class MismatchingBackReferenceError(ConfigurationError):
             f'Many relation defined on "{table_a}.{field}" to'
             f' {table_b}.{back_reference}" must use the same model type back-referenced'
             f' from table "{table_a}"'
+        )
+
+
+class MustUnionForeignKeyError(ConfigurationError):
+    """Raised when a relation field doesn't allow for just foreign key."""
+
+    def __init__(
+        self, table_a: str, table_b: str, field: str, model_b: Type, pk_type: Type
+    ) -> None:
+        super(MustUnionForeignKeyError, self).__init__(
+            f'Relation defined on "{table_a}.{field}" to "{table_b}" must be a union'
+            f' type of "Model | model_pk_type" e.g. "{model_b.__name__} | {pk_type}"'
         )
