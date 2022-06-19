@@ -1,8 +1,10 @@
 """Module providing SQLAlchemyTableGenerator."""
 import uuid
-from typing import Any
+from types import UnionType
+from typing import Any, get_args, get_origin
 
 from pydantic import BaseModel, ConstrainedStr
+from pydantic.fields import ModelField
 from sqlalchemy import (  # type: ignore
     Column,
     Float,
@@ -59,61 +61,44 @@ class SQLAlchemyTableGenerator:
         self, table_data: PyDBTableMeta
     ) -> tuple[Column[Any] | Column, ...]:
         columns = []
-        for k, v in table_data.model.__fields__.items():
+        for field_name, field in table_data.model.__fields__.items():
             kwargs = {
-                "primary_key": k == table_data.pk,
-                "index": k in table_data.indexed,
-                "unique": k in table_data.unique,
-                "nullable": not v.required,
+                "primary_key": field_name == table_data.pk,
+                "index": field_name in table_data.indexed,
+                "unique": field_name in table_data.unique,
+                "nullable": not field.required,
             }
-            if issubclass(v.type_, BaseModel):
-                # Get foreign table name from schema.
-                if back_reference := table_data.back_references.get(k):
-                    foreign_table = tablename_from_model(v.type_, self._schema)
+            if origin := get_origin(field.type_):
+                if origin == UnionType:
                     if (
-                        table_data.relationships[k].relation_type
-                        != RelationType.MANY_TO_MANY
-                    ):
-                        # This field is not a column.
-                        continue
-                    if self._mtm.get(f"{table_data.name}.{back_reference}") == k:
-                        # This mtm has already been made.
-                        continue
-                    # Create joining table.
-                    self._mtm[f"{foreign_table}.{k}"] = back_reference
-                    Table(
-                        table_data.relationships[k].mtm_table,
-                        self._metadata,
-                        *self._get_mtm_columns(table_data.name, foreign_table),
-                    )
-                    continue
-                if v.type_ in [it.model for it in self._schema.values()]:
-                    foreign_table = tablename_from_model(v.type_, self._schema)
-                    foreign_data = self._schema[foreign_table]
-                    columns.append(
-                        Column(
-                            f"{k}_id",
-                            ForeignKey(f"{foreign_table}.{foreign_data.pk}"),
-                            **kwargs,
+                        column := self._get_column_from_union(
+                            table_data, field_name, field, **kwargs
                         )
-                    )
+                    ) is not None:
+                        columns.append(column)
+                    else:
+                        pass  # TODO
                 else:
-                    columns.append(Column(k, JSON, **kwargs))
-            elif v.type_ is uuid.UUID:
+                    pass  # TODO
+            elif issubclass(field.type_, BaseModel):
+                columns.append(Column(field_name, JSON, **kwargs))
+            elif field.type_ is uuid.UUID:
                 col_type = (
                     postgresql.UUID if self._engine.name == "postgres" else String(36)
                 )
-                columns.append(Column(k, col_type, **kwargs))
-            elif v.type_ is str or issubclass(v.type_, ConstrainedStr):
-                columns.append(Column(k, String(v.field_info.max_length), **kwargs))
-            elif v.type_ is int:
-                columns.append(Column(k, Integer, **kwargs))
-            elif v.type_ is float:
-                columns.append(Column(k, Float, **kwargs))
-            elif v.type_ is dict:
-                columns.append(Column(k, JSON, **kwargs))
-            elif v.type_ is list:
-                columns.append(Column(k, JSON, **kwargs))
+                columns.append(Column(field_name, col_type, **kwargs))
+            elif field.type_ is str or issubclass(field.type_, ConstrainedStr):
+                columns.append(
+                    Column(field_name, String(field.field_info.max_length), **kwargs)
+                )
+            elif field.type_ is int:
+                columns.append(Column(field_name, Integer, **kwargs))
+            elif field.type_ is float:
+                columns.append(Column(field_name, Float, **kwargs))
+            elif field.type_ is dict:
+                columns.append(Column(field_name, JSON, **kwargs))
+            elif field.type_ is list:
+                columns.append(Column(field_name, JSON, **kwargs))
         return tuple(columns)
 
     def _get_mtm_columns(self, table_a: str, table_b: str) -> list[Column]:
@@ -135,3 +120,36 @@ class SQLAlchemyTableGenerator:
             ),
         ]
         return columns
+
+    def _get_column_from_union(
+        self, table_data: PyDBTableMeta, field_name: str, field: ModelField, **kwargs
+    ) -> Column | None:
+        # Get foreign table name from schema.
+        if back_reference := table_data.back_references.get(field_name):
+            foreign_table = tablename_from_model(field.type_, self._schema)
+            if (
+                table_data.relationships[field_name].relation_type
+                != RelationType.MANY_TO_MANY
+            ):
+                # This field is not a column.
+                return
+            if self._mtm.get(f"{table_data.name}.{back_reference}") == field_name:
+                # This mtm has already been made.
+                return
+            # Create joining table.
+            self._mtm[f"{foreign_table}.{field_name}"] = back_reference
+            Table(
+                table_data.relationships[field_name].mtm_table,
+                self._metadata,
+                *self._get_mtm_columns(table_data.name, foreign_table),
+            )
+            return
+        for arg in get_args(field.type_):
+            if arg in [it.model for it in self._schema.values()]:
+                foreign_table = tablename_from_model(arg, self._schema)
+                foreign_data = self._schema[foreign_table]
+                return Column(
+                    f"{field_name}_id",
+                    ForeignKey(f"{foreign_table}.{foreign_data.pk}"),
+                    **kwargs,
+                )

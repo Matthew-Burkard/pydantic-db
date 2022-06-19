@@ -100,10 +100,10 @@ class PyDB:
     ) -> tuple[list[str], dict[str, Relation]]:
         columns = []
         relationships = {}
-        related_table: PyDBTableMeta | None = None
         for field_name, field in table_data.model.__fields__.items():
+            related_table: PyDBTableMeta | None = None
             # Try to get foreign model from union.
-            if args := get_args(field.outer_type_):
+            if args := get_args(field.type_):
                 for arg in args:
                     related_table = self._model_to_metadata.get(arg)
                     if related_table is not None:
@@ -121,8 +121,8 @@ class PyDB:
                     tablename, related_table.name, field_name, back_reference
                 )
             # If this is not a list of another table, add foreign key.
-            origin = get_origin(field.outer_type_)
-            if origin != list and field.outer_type_ != ForwardRef(
+            origin = get_origin(field.type_)
+            if origin != list and field.type_ != ForwardRef(
                 f"list[{table_data.model.__name__}]"
             ):
                 correct_type = (
