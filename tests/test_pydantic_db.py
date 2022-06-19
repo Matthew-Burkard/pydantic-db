@@ -35,7 +35,7 @@ class Flavor(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     name: str = Field(..., max_length=63)
     strength: int | None = None
-    coffee: Coffee | None = None
+    coffee: Coffee | UUID | None = None
 
 
 @db.table(pk="id")
@@ -43,8 +43,8 @@ class Coffee(BaseModel):
     """Drink it in the morning."""
 
     id: UUID = Field(default_factory=uuid4)
-    primary_flavor: Flavor
-    secondary_flavor: Flavor
+    primary_flavor: Flavor | UUID
+    secondary_flavor: Flavor | UUID
     sweetener: str
     cream: float
     place: dict
