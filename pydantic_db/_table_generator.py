@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
 from pydantic_db._table import PyDBTableMeta, RelationType
 from pydantic_db._util import tablename_from_model
+from pydantic_db.errors import TypeConversionError
 
 
 class SQLAlchemyTableGenerator:
@@ -77,9 +78,9 @@ class SQLAlchemyTableGenerator:
                     ) is not None:
                         columns.append(column)
                     else:
-                        pass  # TODO
+                        raise TypeConversionError(field.type_)
                 else:
-                    pass  # TODO
+                    raise TypeConversionError(field.type_)
             elif issubclass(field.type_, BaseModel):
                 columns.append(Column(field_name, JSON, **kwargs))
             elif field.type_ is uuid.UUID:
@@ -100,26 +101,6 @@ class SQLAlchemyTableGenerator:
             elif field.type_ is list:
                 columns.append(Column(field_name, JSON, **kwargs))
         return tuple(columns)
-
-    def _get_mtm_columns(self, table_a: str, table_b: str) -> list[Column]:
-        table_a_pk = self._schema[table_a].pk
-        table_b_pk = self._schema[table_b].pk
-        table_a_col_name = table_a
-        table_b_col_name = table_b
-        if table_a == table_b:
-            table_a_col_name = f"{table_a}_a"
-            table_b_col_name = f"{table_b}_b"
-        columns = [
-            Column(
-                table_a_col_name,
-                ForeignKey(f"{table_a}.{table_a_pk}"),
-            ),
-            Column(
-                table_b_col_name,
-                ForeignKey(f"{table_b}.{table_b_pk}"),
-            ),
-        ]
-        return columns
 
     def _get_column_from_union(
         self, table_data: PyDBTableMeta, field_name: str, field: ModelField, **kwargs
@@ -153,3 +134,23 @@ class SQLAlchemyTableGenerator:
                     ForeignKey(f"{foreign_table}.{foreign_data.pk}"),
                     **kwargs,
                 )
+
+    def _get_mtm_columns(self, table_a: str, table_b: str) -> list[Column]:
+        table_a_pk = self._schema[table_a].pk
+        table_b_pk = self._schema[table_b].pk
+        table_a_col_name = table_a
+        table_b_col_name = table_b
+        if table_a == table_b:
+            table_a_col_name = f"{table_a}_a"
+            table_b_col_name = f"{table_b}_b"
+        columns = [
+            Column(
+                table_a_col_name,
+                ForeignKey(f"{table_a}.{table_a_pk}"),
+            ),
+            Column(
+                table_b_col_name,
+                ForeignKey(f"{table_b}.{table_b_pk}"),
+            ),
+        ]
+        return columns

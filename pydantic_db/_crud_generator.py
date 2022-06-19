@@ -477,7 +477,7 @@ class CRUDGenerator(Generic[ModelType]):
                 py_type[column_name] = self._sql_type_to_py(
                     model_type, column_name, value
                 )
-        return model_type.construct(values=py_type)
+        return model_type.construct(**py_type)
 
     def _tablename_from_model_instance(self, model: BaseModel) -> str:
         # noinspection PyTypeHints

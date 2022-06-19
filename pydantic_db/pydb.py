@@ -101,15 +101,7 @@ class PyDB:
         columns = []
         relationships = {}
         for field_name, field in table_data.model.__fields__.items():
-            related_table: PyDBTableMeta | None = None
-            # Try to get foreign model from union.
-            if args := get_args(field.type_):
-                for arg in args:
-                    related_table = self._model_to_metadata.get(arg)
-                    if related_table is not None:
-                        break
-            # Try to get foreign table from type.
-            related_table = related_table or self._model_to_metadata.get(field.type_)
+            related_table = self._get_related_table(field)
             if related_table is None:
                 columns.append(field_name)
                 continue
@@ -121,13 +113,14 @@ class PyDB:
                     tablename, related_table.name, field_name, back_reference
                 )
             # If this is not a list of another table, add foreign key.
-            origin = get_origin(field.type_)
-            if origin != list and field.type_ != ForwardRef(
+            if get_origin(field.outer_type_) != list and field.type_ != ForwardRef(
                 f"list[{table_data.model.__name__}]"
             ):
+                args = get_args(field.type_)
                 correct_type = (
                     related_table.model.__fields__[related_table.pk].type_ in args
                 )
+                origin = get_origin(field.type_)
                 if not args or not origin == UnionType or not correct_type:
                     raise MustUnionForeignKeyError(
                         tablename,
@@ -167,3 +160,18 @@ class PyDB:
                 mtm_table=mtm_tablename,
             )
         return columns, relationships
+
+    def _get_related_table(self, field) -> PyDBTableMeta:
+        related_table: PyDBTableMeta | None = None
+        # Try to get foreign model from union.
+        if args := get_args(field.type_):
+            for arg in args:
+                try:
+                    related_table = self._model_to_metadata.get(arg)
+                except TypeError:
+                    break
+                if related_table is not None:
+                    break
+        # Try to get foreign table from type.
+        related_table = related_table or self._model_to_metadata.get(field.type_)
+        return related_table

@@ -42,3 +42,12 @@ class MustUnionForeignKeyError(ConfigurationError):
             f'Relation defined on "{table_a}.{field}" to "{table_b}" must be a union'
             f' type of "Model | model_pk_type" e.g. "{model_b.__name__} | {pk_type}"'
         )
+
+
+class TypeConversionError(ConfigurationError):
+    """Raised when a Python type fails to convert to SQL."""
+
+    def __init__(self, py_type: Type) -> None:
+        super(TypeConversionError, self).__init__(
+            f"Failed to convert type {py_type} to SQL."
+        )
