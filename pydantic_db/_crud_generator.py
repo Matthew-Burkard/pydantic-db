@@ -1,7 +1,8 @@
 """Generate Python CRUD methods for a model."""
 import asyncio
 import json
-from typing import Any, Generic, Type
+import re
+from typing import Any, Generic, get_args, Type
 from uuid import UUID
 
 import pydantic
@@ -138,7 +139,7 @@ class CRUDGenerator(Generic[ModelType]):
             Query.from_(table),
             table_data,
             depth,
-            self._columns(table_data),
+            self._columns(table_data, depth),
         )
         query = query.where(
             table.field(table_data.pk) == self._py_type_to_sql(pk)
@@ -374,7 +375,7 @@ class CRUDGenerator(Generic[ModelType]):
             Query.from_(table),
             pydb_table,
             depth,
-            self._columns(pydb_table),
+            self._columns(pydb_table, depth),
         )
         for field, value in where.items():
             query = query.where(table.field(field) == value)
@@ -425,7 +426,7 @@ class CRUDGenerator(Generic[ModelType]):
             )
             columns.extend(
                 [
-                    rel_table.field(c).as_(f"{relation_name}//{c}")
+                    rel_table.field(c).as_(f"{relation_name}//{depth}//{c}")
                     for c in self._schema[relation.foreign_table].columns
                 ]
             )
@@ -456,7 +457,9 @@ class CRUDGenerator(Generic[ModelType]):
             if not column.startswith(f"{table_tree}//"):
                 # This must be a column somewhere else in the tree.
                 continue
-            column_name = column.removeprefix(f"{table_tree}//")
+            groups = re.match(rf"{re.escape(table_tree)}//(\d+)//(.*)", column)
+            depth = int(groups.group(1))
+            column_name = groups.group(2)
             if column_name in table_data.relationships:
                 if value is None:
                     # No further depth has been found.
@@ -464,15 +467,23 @@ class CRUDGenerator(Generic[ModelType]):
                 foreign_table = self._schema[
                     table_data.relationships[column_name].foreign_table
                 ]
-                py_type[column_name.removesuffix("_id")] = self._model_from_row_mapping(
-                    row_mapping={
-                        k.removeprefix(f"{table_tree}/"): v
-                        for k, v in row_mapping.items()
-                        if not k.startswith(f"{table_tree}//")
-                    },
-                    model_type=foreign_table.model,
-                    table_tree=column_name.removesuffix("_id"),
-                )
+                field_name = column_name.removesuffix("_id")
+                if depth <= 0:
+                    py_type[field_name] = self._sql_pk_to_py_pk_type(
+                        model_type, field_name, column, row_mapping
+                    )
+                else:
+                    py_type[
+                        column_name.removesuffix("_id")
+                    ] = self._model_from_row_mapping(
+                        row_mapping={
+                            k.removeprefix(f"{table_tree}/"): v
+                            for k, v in row_mapping.items()
+                            if not k.startswith(f"{table_tree}//")
+                        },
+                        model_type=foreign_table.model,
+                        table_tree=field_name,
+                    )
             else:
                 py_type[column_name] = self._sql_type_to_py(
                     model_type, column_name, value
@@ -497,11 +508,29 @@ class CRUDGenerator(Generic[ModelType]):
             return value.json()
         return value
 
+    def _sql_pk_to_py_pk_type(
+        self,
+        model_type: Type[ModelType],
+        field_name: str,
+        column: str,
+        row_mapping: dict,
+    ):
+        type_ = None
+        for arg in get_args(model_type.__fields__[field_name].type_):
+            if arg in self._schema.values():
+                continue
+            type_ = arg
+        if type_:
+            return type_(row_mapping[column])
+        return row_mapping[column]
+
     @staticmethod
-    def _columns(table_data: PyDBTableMeta) -> list[Field]:
-        tablename = table_data.name
-        table = Table(tablename)
-        return [table.field(c).as_(f"{tablename}//{c}") for c in table_data.columns]
+    def _columns(table_data: PyDBTableMeta, depth: int) -> list[Field]:
+        table = Table(table_data.name)
+        return [
+            table.field(c).as_(f"{table_data.name}//{depth}//{c}")
+            for c in table_data.columns
+        ]
 
     @staticmethod
     def _sql_type_to_py(model: Type[ModelType], column: str, value: Any) -> Any:

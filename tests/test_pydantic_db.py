@@ -60,6 +60,7 @@ class PlainTable(BaseModel):
 
 
 Flavor.update_forward_refs()
+print(Flavor.schema_json())
 
 
 class PyDBTests(unittest.IsolatedAsyncioTestCase):
@@ -173,6 +174,12 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         )
         await db[Coffee].insert(coffee)
         # Find record and compare.
+        coffee_dict = coffee.dict()
         self.assertDictEqual(
-            coffee.dict(), (await db[Coffee].find_one(coffee.id, depth=1)).dict()
+            coffee_dict, (await db[Coffee].find_one(coffee.id, depth=1)).dict()
+        )
+        coffee_dict["primary_flavor"] = coffee_dict["primary_flavor"]["id"]
+        coffee_dict["secondary_flavor"] = coffee_dict["secondary_flavor"]["id"]
+        self.assertDictEqual(
+            coffee_dict, (await db[Coffee].find_one(coffee.id)).dict()
         )

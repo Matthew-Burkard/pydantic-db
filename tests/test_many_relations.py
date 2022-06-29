@@ -28,8 +28,8 @@ class Many(BaseModel):
     """Has a "One" parent and "Many" siblings."""
 
     id: UUID = Field(default_factory=uuid4)
-    one_a: One
-    one_b: One | None = None
+    one_a: One | UUID
+    one_b: One | UUID | None = None
 
 
 @db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
