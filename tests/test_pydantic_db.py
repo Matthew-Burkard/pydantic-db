@@ -60,7 +60,6 @@ class PlainTable(BaseModel):
 
 
 Flavor.update_forward_refs()
-print(Flavor.schema_json())
 
 
 class PyDBTests(unittest.IsolatedAsyncioTestCase):

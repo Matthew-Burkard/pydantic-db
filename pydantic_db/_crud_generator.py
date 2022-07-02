@@ -168,12 +168,7 @@ class CRUDGenerator(Generic[ModelType]):
             await self._upsert_relations(model_instance, table_data)
         # Insert record.
         values = [
-            self._py_type_to_sql(
-                model_instance.__dict__[
-                    c.removesuffix("_id") if c in table_data.relationships else c
-                ]
-            )
-            for c in table_data.columns
+            self._py_type_to_sql(model_instance.__dict__[c]) for c in table_data.columns
         ]
         await self._execute(
             Query.into(table).columns(*table_data.columns).insert(*values)
@@ -190,12 +185,7 @@ class CRUDGenerator(Generic[ModelType]):
             await self._upsert_relations(model_instance, table_data)
         # Update record.
         values = [
-            self._py_type_to_sql(
-                model_instance.__dict__[
-                    c.removesuffix("_id") if c in table_data.relationships else c
-                ]
-            )
-            for c in table_data.columns
+            self._py_type_to_sql(model_instance.__dict__[c]) for c in table_data.columns
         ]
         query = Query.update(table)
         for i, column in enumerate(table_data.columns):
@@ -225,7 +215,7 @@ class CRUDGenerator(Generic[ModelType]):
         for column, relation in table_data.relationships.items():
             if relation.relation_type == RelationType.MANY_TO_MANY:
                 print(relation)
-            elif rel_model := model_instance.__dict__.get(column.removesuffix("_id")):
+            elif rel_model := model_instance.__dict__.get(column):
                 tablename = tablename_from_model(type(rel_model), self._schema)
                 await self._upsert(rel_model, tablename, True)
 
@@ -255,7 +245,6 @@ class CRUDGenerator(Generic[ModelType]):
         # For each field, populate the many relationships of that field.
         for tablename, data in self._schema.items():
             for column in table_data.columns:
-                column = column.removesuffix("_id")
                 if type(model := model_instance.__dict__.get(column)) == data.model:
                     model = await self._populate_many_relations(data, model, depth)
                     model_instance.__setattr__(column, model)
@@ -309,7 +298,7 @@ class CRUDGenerator(Generic[ModelType]):
             Query.from_(table)
             .left_join(foreign_table)
             .on(
-                foreign_table.field(f"{relation.back_references}_id")
+                foreign_table.field(relation.back_references)
                 == table.field(table_data.pk)
             )
             .where(table.field(table_data.pk) == pk)
@@ -335,11 +324,11 @@ class CRUDGenerator(Generic[ModelType]):
     ) -> Any:
         mtm_table = Table(relation.mtm_table)
         if relation.foreign_table == table_data.name:
-            mtm_field_a = f"{table_data.name}_a_id"
-            mtm_field_b = f"{relation.foreign_table}_b_id"
+            mtm_field_a = f"{table_data.name}_a"
+            mtm_field_b = f"{relation.foreign_table}_b"
         else:
-            mtm_field_a = f"{table_data.name}_id"
-            mtm_field_b = f"{relation.foreign_table}_id"
+            mtm_field_a = table_data.name
+            mtm_field_b = relation.foreign_table
         query = (
             Query.from_(table)
             .left_join(mtm_table)
@@ -424,7 +413,7 @@ class CRUDGenerator(Generic[ModelType]):
         for field_name, relation in relationships.items():
             if relation.back_references is not None:
                 continue
-            relation_name = f"{table_tree}/{field_name.removesuffix('_id')}"
+            relation_name = f"{table_tree}/{field_name}"
             rel_table = Table(relation.foreign_table).as_(relation_name)
             query = query.left_join(rel_table).on(
                 pypika_table.field(field_name)
@@ -473,22 +462,19 @@ class CRUDGenerator(Generic[ModelType]):
                 foreign_table = self._schema[
                     table_data.relationships[column_name].foreign_table
                 ]
-                field_name = column_name.removesuffix("_id")
                 if depth <= 0:
-                    py_type[field_name] = self._sql_pk_to_py_pk_type(
-                        model_type, field_name, column, row_mapping
+                    py_type[column_name] = self._sql_pk_to_py_pk_type(
+                        model_type, column_name, column, row_mapping
                     )
                 else:
-                    py_type[
-                        column_name.removesuffix("_id")
-                    ] = self._model_from_row_mapping(
+                    py_type[column_name] = self._model_from_row_mapping(
                         row_mapping={
                             k.removeprefix(f"{table_tree}/"): v
                             for k, v in row_mapping.items()
                             if not k.startswith(f"{table_tree}//")
                         },
                         model_type=foreign_table.model,
-                        table_tree=field_name,
+                        table_tree=column_name,
                     )
             else:
                 py_type[column_name] = self._sql_type_to_py(

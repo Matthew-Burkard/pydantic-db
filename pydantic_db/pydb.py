@@ -108,9 +108,11 @@ class PyDB:
             # Check if back-reference is present but mismatched in type.
             back_reference = table_data.back_references.get(field_name)
             back_referenced_field = related_table.model.__fields__.get(back_reference)
-            if back_reference and table_data.model not in get_args(
-                back_referenced_field.type_
-            ) and table_data.model != back_referenced_field.type_:
+            if (
+                back_reference
+                and table_data.model not in get_args(back_referenced_field.type_)
+                and table_data.model != back_referenced_field.type_
+            ):
                 raise MismatchingBackReferenceError(
                     tablename, related_table.name, field_name, back_reference
                 )
@@ -131,8 +133,8 @@ class PyDB:
                         related_table.model,
                         related_table.model.__fields__[related_table.pk].type_.__name__,
                     )
-                columns.append(f"{field_name}_id")
-                relationships[f"{field_name}_id"] = Relation(
+                columns.append(field_name)
+                relationships[field_name] = Relation(
                     foreign_table=related_table.name,
                     relation_type=RelationType.ONE_TO_MANY,
                 )

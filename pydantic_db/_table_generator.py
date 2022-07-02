@@ -38,16 +38,9 @@ class SQLAlchemyTableGenerator:
     async def init(self) -> None:
         """Generate SQL Alchemy tables."""
         for tablename, table_data in self._schema.items():
-            constraints = [
-                [
-                    f"{c}_id" if f"{c}_id" in table_data.relationships else c
-                    for c in cols
-                ]
-                for cols in table_data.unique_constraints
-            ]
             unique_constraints = (
                 UniqueConstraint(*cols, name=f"{'_'.join(cols)}_constraint")
-                for cols in constraints
+                for cols in table_data.unique_constraints
             )
             Table(
                 tablename,
@@ -130,7 +123,7 @@ class SQLAlchemyTableGenerator:
                 foreign_table = tablename_from_model(arg, self._schema)
                 foreign_data = self._schema[foreign_table]
                 return Column(
-                    f"{field_name}_id",
+                    field_name,
                     ForeignKey(f"{foreign_table}.{foreign_data.pk}"),
                     **kwargs,
                 )
