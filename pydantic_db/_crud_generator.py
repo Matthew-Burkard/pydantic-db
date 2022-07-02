@@ -2,6 +2,7 @@
 import asyncio
 import json
 import re
+from types import NoneType
 from typing import Any, Generic, get_args, Type
 from uuid import UUID
 
@@ -236,11 +237,6 @@ class CRUDGenerator(Generic[ModelType]):
         depth -= 1
         for column, relation in table_data.relationships.items():
             if not relation.back_references:
-                column = column.removesuffix("_id")
-                if (model := model_instance.__dict__[column]) is None:
-                    model_instance.__dict__[column] = self._populate_many_relations(
-                        self._schema[relation.foreign_table], model, depth
-                    )
                 continue
             pk = model_instance.__dict__[table_data.pk]
             models = await self._find_many_relation(table_data, pk, relation, depth)
@@ -253,6 +249,16 @@ class CRUDGenerator(Generic[ModelType]):
                 ]
             )
             model_instance.__setattr__(column, models)
+        # If depth is exhausted back out to here to skip needless loops.
+        if depth <= 0:
+            return model_instance
+        # For each field, populate the many relationships of that field.
+        for tablename, data in self._schema.items():
+            for column in table_data.columns:
+                column = column.removesuffix("_id")
+                if type(model := model_instance.__dict__.get(column)) == data.model:
+                    model = await self._populate_many_relations(data, model, depth)
+                    model_instance.__setattr__(column, model)
         return model_instance
 
     async def _find_many_relation(
@@ -517,7 +523,7 @@ class CRUDGenerator(Generic[ModelType]):
     ):
         type_ = None
         for arg in get_args(model_type.__fields__[field_name].type_):
-            if arg in self._schema.values():
+            if arg in self._schema.values() or arg is NoneType:
                 continue
             type_ = arg
         if type_:
