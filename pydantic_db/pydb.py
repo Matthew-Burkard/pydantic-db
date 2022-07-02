@@ -108,8 +108,9 @@ class PyDB:
             # Check if back-reference is present but mismatched in type.
             back_reference = table_data.back_references.get(field_name)
             back_referenced_field = related_table.model.__fields__.get(back_reference)
-            # TODO Must account for union of pk type.
-            if back_reference and table_data.model != back_referenced_field.type_:
+            if back_reference and table_data.model not in get_args(
+                back_referenced_field.type_
+            ) and table_data.model != back_referenced_field.type_:
                 raise MismatchingBackReferenceError(
                     tablename, related_table.name, field_name, back_reference
                 )
