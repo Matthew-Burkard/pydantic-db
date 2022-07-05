@@ -62,40 +62,51 @@ class SQLAlchemyTableGenerator:
                 "unique": field_name in table_data.unique,
                 "nullable": not field.required,
             }
-            if origin := get_origin(field.type_):
-                if origin == UnionType:
-                    if (
-                        column := self._get_column_from_union(
-                            table_data, field_name, field, **kwargs
-                        )
-                    ) is not None:
-                        columns.append(column)
-                    else:
-                        raise TypeConversionError(field.type_)
-                else:
-                    raise TypeConversionError(field.type_)
-            elif issubclass(field.type_, BaseModel):
-                columns.append(Column(field_name, JSON, **kwargs))
-            elif field.type_ is uuid.UUID:
-                col_type = (
-                    postgresql.UUID if self._engine.name == "postgres" else String(36)
-                )
-                columns.append(Column(field_name, col_type, **kwargs))
-            elif field.type_ is str or issubclass(field.type_, ConstrainedStr):
-                columns.append(
-                    Column(field_name, String(field.field_info.max_length), **kwargs)
-                )
-            elif field.type_ is int:
-                columns.append(Column(field_name, Integer, **kwargs))
-            elif field.type_ is float:
-                columns.append(Column(field_name, Float, **kwargs))
-            elif field.type_ is dict:
-                columns.append(Column(field_name, JSON, **kwargs))
-            elif field.type_ is list:
-                columns.append(Column(field_name, JSON, **kwargs))
+            column = self._get_column(table_data, field_name, field, **kwargs)
+            if column is not None:
+                columns.append(column)
         return tuple(columns)
 
-    def _get_column_from_union(
+    def _get_column(
+        self, table_data: PyDBTableMeta, field_name: str, field: ModelField, **kwargs
+    ) -> Column | None:
+        outer_origin = get_origin(field.outer_type_)
+        origin = get_origin(field.type_)
+        if outer_origin and outer_origin == list:
+            return self._get_column_from_type_args(
+                table_data, field_name, field, **kwargs
+            )
+        if origin:
+            if origin == UnionType:
+                if (
+                    column := self._get_column_from_type_args(
+                        table_data, field_name, field, **kwargs
+                    )
+                ) is not None:
+                    return column
+                else:
+                    raise TypeConversionError(field.type_)
+            else:
+                raise TypeConversionError(field.type_)
+        if issubclass(field.type_, BaseModel):
+            return Column(field_name, JSON, **kwargs)
+        if field.type_ is uuid.UUID:
+            col_type = (
+                postgresql.UUID if self._engine.name == "postgres" else String(36)
+            )
+            return Column(field_name, col_type, **kwargs)
+        if field.type_ is str or issubclass(field.type_, ConstrainedStr):
+            return Column(field_name, String(field.field_info.max_length), **kwargs)
+        if field.type_ is int:
+            return Column(field_name, Integer, **kwargs)
+        if field.type_ is float:
+            return Column(field_name, Float, **kwargs)
+        if field.type_ is dict:
+            return Column(field_name, JSON, **kwargs)
+        if field.type_ is list:
+            return Column(field_name, JSON, **kwargs)
+
+    def _get_column_from_type_args(
         self, table_data: PyDBTableMeta, field_name: str, field: ModelField, **kwargs
     ) -> Column | None:
         # Get foreign table name from schema.

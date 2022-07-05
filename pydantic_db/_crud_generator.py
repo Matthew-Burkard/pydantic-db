@@ -257,7 +257,7 @@ class CRUDGenerator(Generic[ModelType]):
         foreign_table = Table(relation.foreign_table)
         foreign_table_data = self._schema[relation.foreign_table]
         if relation.relation_type == RelationType.ONE_TO_MANY:
-            many_result = await self._find_mtm(
+            many_result = await self._find_otm(
                 table_data,
                 foreign_table_data,
                 relation,
@@ -267,7 +267,7 @@ class CRUDGenerator(Generic[ModelType]):
                 depth,
             )
         else:
-            many_result = await self._find_otm(
+            many_result = await self._find_mtm(
                 table_data,
                 foreign_table_data,
                 relation,
@@ -284,7 +284,7 @@ class CRUDGenerator(Generic[ModelType]):
             for row in many_result
         ]
 
-    async def _find_mtm(
+    async def _find_otm(
         self,
         table_data: PyDBTableMeta,
         foreign_table_data: PyDBTableMeta,
@@ -312,7 +312,7 @@ class CRUDGenerator(Generic[ModelType]):
         )
         return await self._execute(many_query)
 
-    async def _find_otm(
+    async def _find_mtm(
         self,
         table_data: PyDBTableMeta,
         foreign_table_data: PyDBTableMeta,
@@ -506,7 +506,7 @@ class CRUDGenerator(Generic[ModelType]):
         field_name: str,
         column: str,
         row_mapping: dict,
-    ):
+    ) -> Any:
         type_ = None
         for arg in get_args(model_type.__fields__[field_name].type_):
             if arg in self._schema.values() or arg is NoneType:
