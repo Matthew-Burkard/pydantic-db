@@ -1,4 +1,4 @@
-"""PyDB tests."""
+"""PyDB tests for one-to-many relationships."""
 from __future__ import annotations
 
 import asyncio
@@ -32,38 +32,8 @@ class Many(BaseModel):
     one_b: One | UUID | None = None
 
 
-@db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
-class ManyToManyA(BaseModel):
-    """Has many-to-many relationship with ManyToManyB."""
-
-    id: UUID = Field(default_factory=uuid4)
-    many: list[ManyToManyB] | None = None
-    many_two: list[ManyToManyB] | None = None
-
-
-@db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
-class ManyToManyB(BaseModel):
-    """Has many-to-many relationship with ManyToManyA."""
-
-    id: UUID = Field(default_factory=uuid4)
-    many: list[ManyToManyA]
-    many_two: list[ManyToManyA] | None = None
-
-
-@db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
-class ManyToSelf(BaseModel):
-    """Has many-to-many relationship with ManyToManyA."""
-
-    id: UUID = Field(default_factory=uuid4)
-    many: list[ManyToSelf] | None = None
-    many_two: list[ManyToSelf] | None = None
-
-
 One.update_forward_refs()
 Many.update_forward_refs()
-ManyToManyA.update_forward_refs()
-ManyToManyB.update_forward_refs()
-ManyToSelf.update_forward_refs()
 
 
 class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
@@ -105,14 +75,3 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_one_to_many_update(self) -> None:
         pass
-
-    # async def test_many_to_many_insert_and_get(self) -> None:
-    #     many_a = [ManyToManyA(), ManyToManyA()]
-    #     for many in many_a:
-    #         await db[ManyToManyA].insert(many)
-    #     many_b = ManyToManyB(many=many_a)
-    #     await db[ManyToManyB].insert(many_b)
-    #     find_b = await db[ManyToManyB].find_one(many_b.id, depth=2)
-    #     self.assertDictEqual(many_b.dict(), find_b.dict())
-    #     find_a = await db[ManyToManyA].find_one(many_a[0].id, depth=3)
-    #     self.assertDictEqual(find_a.many[0].dict(), find_b.dict())
