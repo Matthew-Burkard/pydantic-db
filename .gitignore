@@ -1,3 +1,4 @@
+.fleet/
 .idea/
 .vscode/
 build/
@@ -7,4 +8,4 @@ venv/
 
 *.egg-info
 *__pycache__*
-*db.sqlite*
+*.sqlite*
