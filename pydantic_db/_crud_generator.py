@@ -205,31 +205,32 @@ class CRUDGenerator(Generic[ModelType]):
         ):
             if model == model_instance:
                 return model
-            return await self.update(model_instance)
+            return await self._update(model_instance, tablename)
         return await self._insert(model_instance, tablename, upsert_relations)
 
     async def _upsert_relations(
         self, model_instance: ModelType, table_data: PyDBTableMeta
     ) -> None:
-        # Upsert relationships.
         for column, relation in table_data.relationships.items():
             if relation.relation_type == RelationType.MANY_TO_MANY:
                 for rel_model in model_instance.__dict__.get(column) or []:
-                    await self._upsert_relation(
-                        model_instance, table_data, rel_model, relation
+                    rel_tablename = tablename_from_model(type(rel_model), self._schema)
+                    await self._upsert_mtm_record(
+                        model_instance, table_data, rel_model, relation, rel_tablename
                     )
+                    await self._upsert(rel_model, rel_tablename, True)
             elif rel_model := model_instance.__dict__.get(column):
                 tablename = tablename_from_model(type(rel_model), self._schema)
                 await self._upsert(rel_model, tablename, True)
 
-    async def _upsert_relation(
+    async def _upsert_mtm_record(
         self,
         model_instance: ModelType,
         table_data: PyDBTableMeta,
         rel_model: ModelType,
         relation: Relation,
+        rel_tablename: str,
     ) -> None:
-        rel_tablename = tablename_from_model(type(rel_model), self._schema)
         # Upsert the foreign model.
         await self._upsert(rel_model, rel_tablename, True)
         # Determine which table is table_a.
@@ -261,6 +262,7 @@ class CRUDGenerator(Generic[ModelType]):
         res = await self._execute(query)
         try:
             next(res)
+            # Record exists, back out.
             return
         except StopIteration:
             pass
