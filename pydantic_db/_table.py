@@ -17,13 +17,23 @@ class RelationType(Enum):
     MANY_TO_MANY = auto()
 
 
+class MTMData(BaseModel):
+    """Stores information about MTM relationships."""
+
+    name: str | None = None
+    table_a: str | None = None
+    table_b: str | None = None
+    table_a_column: str | None = None
+    table_b_column: str | None = None
+
+
 class Relation(BaseModel):
     """Describes a relationship from one table to another."""
 
     foreign_table: str
     back_references: str | None = None
     relation_type: RelationType
-    mtm_table: str | None = None
+    mtm_data: MTMData | None = None
 
 
 class PyDBTableMeta(GenericModel, Generic[ModelType]):
