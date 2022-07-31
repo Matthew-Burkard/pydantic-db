@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from typing import Any
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -50,6 +51,7 @@ class Coffee(BaseModel):
     place: dict
     ice: list
     size: Vector3
+    attributes: dict[str, Any] | None = None
 
 
 @db.table(pk="id")

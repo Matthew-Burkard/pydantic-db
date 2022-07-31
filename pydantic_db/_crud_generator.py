@@ -160,7 +160,7 @@ class CRUDGenerator(Generic[ModelType]):
 
     async def _insert(
         self, model_instance: ModelType, tablename: str, upsert_relations
-    ):
+    ) -> ModelType:
         # noinspection DuplicatedCode
         table_data = self._schema[tablename]
         table = Table(tablename)
@@ -205,19 +205,57 @@ class CRUDGenerator(Generic[ModelType]):
         ):
             if model == model_instance:
                 return model
-            return await self.update(model_instance)
+            return await self._update(model_instance, tablename)
         return await self._insert(model_instance, tablename, upsert_relations)
 
     async def _upsert_relations(
         self, model_instance: ModelType, table_data: PyDBTableMeta
-    ):
-        # Upsert relationships.
+    ) -> None:
         for column, relation in table_data.relationships.items():
             if relation.relation_type == RelationType.MANY_TO_MANY:
-                print(relation)
+                for rel_model in model_instance.__dict__.get(column) or []:
+                    rel_tablename = tablename_from_model(type(rel_model), self._schema)
+                    await self._upsert(rel_model, rel_tablename, True)
+                    await self._upsert_mtm_record(
+                        model_instance, table_data, rel_model, relation, rel_tablename
+                    )
             elif rel_model := model_instance.__dict__.get(column):
                 tablename = tablename_from_model(type(rel_model), self._schema)
                 await self._upsert(rel_model, tablename, True)
+
+    async def _upsert_mtm_record(
+        self,
+        model_instance: ModelType,
+        table_data: PyDBTableMeta,
+        rel_model: ModelType,
+        relation: Relation,
+        rel_tablename: str,
+    ) -> None:
+        rel_td = self._schema[rel_tablename]
+        # Upsert mapping record into mtm mapping table.
+        mtm_table = Table(relation.mtm_data.name)
+        # Check if this mtm record already exists.
+        columns = (relation.mtm_data.table_a_column, relation.mtm_data.table_b_column)
+        values = (model_instance.__dict__[table_data.pk], rel_model.__dict__[rel_td.pk])
+        query = (
+            Query.from_(mtm_table)
+            .select(*columns)
+            .where(
+                mtm_table.field(relation.mtm_data.table_a_column)
+                == model_instance.__dict__[table_data.pk]
+                and mtm_table.field(relation.mtm_data.table_b_column)
+                == rel_model.__dict__[rel_td.pk]
+            )
+        )
+        res = await self._execute(query)
+        try:
+            next(res)
+            # Record exists, back out.
+            return
+        except StopIteration:
+            pass
+        query = Query.into(mtm_table).columns(*columns).insert(*values)
+        await self._execute(query)
 
     async def _populate_many_relations(
         self, table_data: PyDBTableMeta, model_instance: ModelType, depth: int
@@ -322,7 +360,7 @@ class CRUDGenerator(Generic[ModelType]):
         pk: Any,
         depth: int,
     ) -> Any:
-        mtm_table = Table(relation.mtm_table)
+        mtm_table = Table(relation.mtm_data.name)
         if relation.foreign_table == table_data.name:
             mtm_field_a = f"{table_data.name}_a"
             mtm_field_b = f"{relation.foreign_table}_b"

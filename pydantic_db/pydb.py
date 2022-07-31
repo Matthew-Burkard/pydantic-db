@@ -8,7 +8,7 @@ from sqlalchemy import MetaData  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
 from pydantic_db._crud_generator import CRUDGenerator
-from pydantic_db._table import PyDBTableMeta, Relation, RelationType
+from pydantic_db._table import MTMData, PyDBTableMeta, Relation, RelationType
 from pydantic_db._table_generator import SQLAlchemyTableGenerator
 from pydantic_db._types import ModelType
 from pydantic_db._util import get_joining_tablename
@@ -152,7 +152,7 @@ class PyDB:
                 relation_type = RelationType.MANY_TO_MANY
                 # Get mtm tablename or make one.
                 if rel := related_table.relationships.get(back_reference):
-                    mtm_tablename = rel.mtm_table
+                    mtm_tablename = rel.mtm_data.name
                 else:
                     mtm_tablename = get_joining_tablename(
                         table_data.name, field_name, related_table.name, back_reference
@@ -161,7 +161,7 @@ class PyDB:
                 foreign_table=related_table.name,
                 relation_type=relation_type,
                 back_references=back_reference,
-                mtm_table=mtm_tablename,
+                mtm_data=MTMData(name=mtm_tablename),
             )
         return columns, relationships
 

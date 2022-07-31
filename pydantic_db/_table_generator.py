@@ -19,7 +19,7 @@ from sqlalchemy import (  # type: ignore
 from sqlalchemy.dialects import postgresql  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
 
-from pydantic_db._table import PyDBTableMeta, RelationType
+from pydantic_db._table import MTMData, PyDBTableMeta, RelationType
 from pydantic_db._util import tablename_from_model
 from pydantic_db.errors import TypeConversionError
 
@@ -88,6 +88,8 @@ class SQLAlchemyTableGenerator:
                     raise TypeConversionError(field.type_)
             else:
                 raise TypeConversionError(field.type_)
+        if get_origin(field.outer_type_) == dict:
+            return Column(field_name, JSON, **kwargs)
         if issubclass(field.type_, BaseModel):
             return Column(field_name, JSON, **kwargs)
         if field.type_ is uuid.UUID:
@@ -118,15 +120,24 @@ class SQLAlchemyTableGenerator:
             ):
                 # This field is not a column.
                 return
+            self._mtm[f"{foreign_table}.{field_name}"] = back_reference
+            col_a, col_b = self._get_mtm_column_names(table_data.name, foreign_table)
+            mtm_data = MTMData(
+                name=table_data.relationships[field_name].mtm_data.name,
+                table_a=table_data.name,
+                table_b=foreign_table,
+                table_a_column=col_a,
+                table_b_column=col_b,
+            )
+            table_data.relationships[field_name].mtm_data = mtm_data
             if self._mtm.get(f"{table_data.name}.{back_reference}") == field_name:
                 # This mtm has already been made.
                 return
-            # Create joining table.
-            self._mtm[f"{foreign_table}.{field_name}"] = back_reference
+            # Create joining mtm table.
             Table(
-                table_data.relationships[field_name].mtm_table,
+                table_data.relationships[field_name].mtm_data.name,
                 self._metadata,
-                *self._get_mtm_columns(table_data.name, foreign_table),
+                *self._get_mtm_columns(table_data.name, foreign_table, col_a, col_b),
             )
             return
         for arg in get_args(field.type_):
@@ -139,22 +150,28 @@ class SQLAlchemyTableGenerator:
                     **kwargs,
                 )
 
-    def _get_mtm_columns(self, table_a: str, table_b: str) -> list[Column]:
+    def _get_mtm_columns(
+        self, table_a: str, table_b: str, column_a: str, column_b: str
+    ) -> list[Column]:
         table_a_pk = self._schema[table_a].pk
         table_b_pk = self._schema[table_b].pk
+        columns = [
+            Column(
+                column_a,
+                ForeignKey(f"{table_a}.{table_a_pk}"),
+            ),
+            Column(
+                column_b,
+                ForeignKey(f"{table_b}.{table_b_pk}"),
+            ),
+        ]
+        return columns
+
+    @staticmethod
+    def _get_mtm_column_names(table_a: str, table_b: str) -> tuple[str, str]:
         table_a_col_name = table_a
         table_b_col_name = table_b
         if table_a == table_b:
             table_a_col_name = f"{table_a}_a"
             table_b_col_name = f"{table_b}_b"
-        columns = [
-            Column(
-                table_a_col_name,
-                ForeignKey(f"{table_a}.{table_a_pk}"),
-            ),
-            Column(
-                table_b_col_name,
-                ForeignKey(f"{table_b}.{table_b_pk}"),
-            ),
-        ]
-        return columns
+        return table_a_col_name, table_b_col_name

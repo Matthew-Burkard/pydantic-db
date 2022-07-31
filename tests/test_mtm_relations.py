@@ -21,6 +21,7 @@ class ManyToManyA(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     many: list[ManyToManyB] | None = None
     many_two: list[ManyToManyB] | None = None
+    value: str | None = None
 
 
 @db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
@@ -60,11 +61,32 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_many_to_many_insert_and_get(self) -> None:
         many_a = [ManyToManyA(), ManyToManyA()]
-        for many in many_a:
-            await db[ManyToManyA].insert(many)
         many_b = ManyToManyB(many=many_a)
         await db[ManyToManyB].insert(many_b)
         find_b = await db[ManyToManyB].find_one(many_b.id, depth=1)
-        self.assertDictEqual(many_b.dict(), find_b.dict())
+        source_b_dict = many_b.dict()
+        find_b_dict = find_b.dict()
+        source_b_dict["many"].sort(key=lambda it: it["id"])
+        find_b_dict["many"].sort(key=lambda it: it["id"])
+        self.assertEqual(source_b_dict["id"], find_b_dict["id"])
+        self.assertListEqual(source_b_dict["many"], find_b_dict["many"])
         find_a = await db[ManyToManyA].find_one(many_a[0].id, depth=2)
         self.assertDictEqual(find_a.many[0].dict(), find_b.dict())
+
+    # async def test_many_to_many_no_depth(self) -> None:
+    #     many_a = [ManyToManyA(), ManyToManyA()]
+    #     many_b = ManyToManyB(many=many_a)
+    #     await db[ManyToManyB].insert(many_b)
+    #     find_b = await db[ManyToManyB].find_one(many_b.id)
+    #     self.assertListEqual([], find_b.many)
+
+    async def test_many_to_many_update(self) -> None:
+        many_a = [ManyToManyA(value="coffee"), ManyToManyA(value="caramel")]
+        many_b = ManyToManyB(many=many_a)
+        await db[ManyToManyB].insert(many_b)
+        many_b.many[0].value = "mocha"
+        await db[ManyToManyB].update(many_b)
+        find_b = await db[ManyToManyB].find_one(many_b.id, depth=1)
+        flavors = [it.value for it in find_b.many]
+        flavors.sort()
+        self.assertListEqual(["caramel", "mocha"], flavors)
