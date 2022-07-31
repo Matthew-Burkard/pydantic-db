@@ -215,10 +215,10 @@ class CRUDGenerator(Generic[ModelType]):
             if relation.relation_type == RelationType.MANY_TO_MANY:
                 for rel_model in model_instance.__dict__.get(column) or []:
                     rel_tablename = tablename_from_model(type(rel_model), self._schema)
+                    await self._upsert(rel_model, rel_tablename, True)
                     await self._upsert_mtm_record(
                         model_instance, table_data, rel_model, relation, rel_tablename
                     )
-                    await self._upsert(rel_model, rel_tablename, True)
             elif rel_model := model_instance.__dict__.get(column):
                 tablename = tablename_from_model(type(rel_model), self._schema)
                 await self._upsert(rel_model, tablename, True)
@@ -231,32 +231,20 @@ class CRUDGenerator(Generic[ModelType]):
         relation: Relation,
         rel_tablename: str,
     ) -> None:
-        # Upsert the foreign model.
-        await self._upsert(rel_model, rel_tablename, True)
-        # Determine which table is table_a.
-        if relation.mtm_data.table_a == rel_tablename:
-            model_a = rel_model
-            model_b = model_instance
-            td_a = self._schema[rel_tablename]
-            td_b = table_data
-        else:
-            model_a = model_instance
-            model_b = rel_model
-            td_a = table_data
-            td_b = self._schema[rel_tablename]
+        rel_td = self._schema[rel_tablename]
         # Upsert mapping record into mtm mapping table.
         mtm_table = Table(relation.mtm_data.name)
         # Check if this mtm record already exists.
         columns = (relation.mtm_data.table_a_column, relation.mtm_data.table_b_column)
-        values = (model_a.__dict__[td_a.pk], model_b.__dict__[td_b.pk])
+        values = (model_instance.__dict__[table_data.pk], rel_model.__dict__[rel_td.pk])
         query = (
             Query.from_(mtm_table)
             .select(*columns)
             .where(
                 mtm_table.field(relation.mtm_data.table_a_column)
-                == model_a.__dict__[td_a.pk]
+                == model_instance.__dict__[table_data.pk]
                 and mtm_table.field(relation.mtm_data.table_b_column)
-                == model_b.__dict__[td_b.pk]
+                == rel_model.__dict__[rel_td.pk]
             )
         )
         res = await self._execute(query)
