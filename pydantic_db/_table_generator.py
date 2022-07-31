@@ -88,6 +88,8 @@ class SQLAlchemyTableGenerator:
                     raise TypeConversionError(field.type_)
             else:
                 raise TypeConversionError(field.type_)
+        if get_origin(field.outer_type_) == dict:
+            return Column(field_name, JSON, **kwargs)
         if issubclass(field.type_, BaseModel):
             return Column(field_name, JSON, **kwargs)
         if field.type_ is uuid.UUID:
