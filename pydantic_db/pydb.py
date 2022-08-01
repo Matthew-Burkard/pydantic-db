@@ -5,11 +5,11 @@ from typing import Callable, ForwardRef, get_args, get_origin, Type
 import caseswitcher
 from pydantic import BaseModel
 from sqlalchemy import MetaData  # type: ignore
-from sqlalchemy.ext.asyncio import AsyncEngine  # type: ignore
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine  # type: ignore
 
 from pydantic_db._crud_generator import CRUDGenerator
 from pydantic_db._table import MTMData, PyDBTableMeta, Relation, RelationType
-from pydantic_db._table_generator import SQLAlchemyTableGenerator
+from pydantic_db._table_generator import DBTableGenerator
 from pydantic_db._types import ModelType
 from pydantic_db._util import get_joining_tablename
 from pydantic_db.errors import (
@@ -22,16 +22,17 @@ from pydantic_db.errors import (
 class PyDB:
     """Class to use pydantic models as ORM models."""
 
-    def __init__(self, engine: AsyncEngine) -> None:
-        """Register models as ORM models and create schemas.
+    def __init__(self, connection_str: str) -> None:
+        """DB interface for registering models and CRUD operations.
 
-        :param engine: A SQL Alchemy async engine.
+        :param connection_str: Connection string for SQLAlchemy async
+            engine.
         """
-        self.metadata: MetaData | None = None
+        self._metadata: MetaData | None = None
         self._crud_generators: dict[Type, CRUDGenerator] = {}
-        self._schema: dict[str, PyDBTableMeta] = {}
+        self._engine = create_async_engine(connection_str)
         self._model_to_metadata: dict[Type[BaseModel], PyDBTableMeta] = {}
-        self._engine = engine
+        self._schema: dict[str, PyDBTableMeta] = {}
 
     def __getitem__(self, item: Type[ModelType]) -> CRUDGenerator[ModelType]:
         return self._crud_generators[item]
@@ -85,7 +86,7 @@ class PyDB:
             table_data.columns = cols
             table_data.relationships = rels
         # Now that relation information is populated generate tables.
-        self.metadata = MetaData()
+        self._metadata = MetaData()
         for tablename, table_data in self._schema.items():
             # noinspection PyTypeChecker
             self._crud_generators[table_data.model] = CRUDGenerator(
@@ -93,7 +94,9 @@ class PyDB:
                 self._engine,
                 self._schema,
             )
-        await SQLAlchemyTableGenerator(self._engine, self.metadata, self._schema).init()
+        await DBTableGenerator(self._engine, self._metadata, self._schema).init()
+        async with self._engine.begin() as conn:
+            await conn.run_sync(self._metadata.drop_all)
 
     def _get_columns_and_relationships(
         self, tablename: str, table_data: PyDBTableMeta

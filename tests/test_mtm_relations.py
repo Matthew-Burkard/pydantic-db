@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.pydb import PyDB
 
-engine = create_async_engine("sqlite+aiosqlite:///mtm_db.sqlite3")
-db = PyDB(engine)
+connection_str = "sqlite+aiosqlite:///mtm_db.sqlite3"
+engine = create_async_engine()
+db = PyDB("sqlite+aiosqlite:///mtm_db.sqlite3")
 
 
 @db.table(pk="id", back_references={"many": "many", "many_two": "many_two"})
@@ -52,10 +53,9 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         """Setup clean sqlite database."""
 
         async def _init() -> None:
-            await db.init()
             async with engine.begin() as conn:
-                await conn.run_sync(db.metadata.drop_all)
-                await conn.run_sync(db.metadata.create_all)
+                await conn.run_sync(db._metadata.drop_all)
+            await db.init()
 
         asyncio.run(_init())
 

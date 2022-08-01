@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.pydb import PyDB
 
-engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
-db = PyDB(engine)
+connection_str = "sqlite+aiosqlite:///db.sqlite3"
+engine = create_async_engine(connection_str)
+db = PyDB(connection_str)
 
 
 class Vector3(BaseModel):
@@ -69,10 +70,9 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         """Setup clean sqlite database."""
 
         async def _init() -> None:
-            await db.init()
             async with engine.begin() as conn:
-                await conn.run_sync(db.metadata.drop_all)
-                await conn.run_sync(db.metadata.create_all)
+                await conn.run_sync(db._metadata.drop_all)
+            await db.init()
 
         asyncio.run(_init())
 
