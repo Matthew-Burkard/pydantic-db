@@ -8,12 +8,10 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 from pypika import Order
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.pydb import PyDB
 
 connection_str = "sqlite+aiosqlite:///db.sqlite3"
-engine = create_async_engine(connection_str)
 db = PyDB(connection_str)
 
 
@@ -70,9 +68,10 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         """Setup clean sqlite database."""
 
         async def _init() -> None:
-            async with engine.begin() as conn:
+            async with db._engine.begin() as conn:
+                await db.init()
                 await conn.run_sync(db._metadata.drop_all)
-            await db.init()
+                await conn.run_sync(db._metadata.create_all)
 
         asyncio.run(_init())
 

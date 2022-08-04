@@ -17,12 +17,12 @@ from pydantic_db.errors import (
 )
 from pydantic_db.pydb import PyDB
 
-engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
-ubr_db = PyDB(engine)
-mbr_db = PyDB(engine)
-muf_missing_union_db = PyDB(engine)
-muf_wrong_pk_type_db = PyDB(engine)
-type_conversion_error_db = PyDB(engine)
+connection_str = "sqlite+aiosqlite:///db.sqlite3"
+ubr_db = PyDB(connection_str)
+mbr_db = PyDB(connection_str)
+muf_missing_union_db = PyDB(connection_str)
+muf_wrong_pk_type_db = PyDB(connection_str)
+type_conversion_error_db = PyDB(connection_str)
 
 
 @ubr_db.table(pk="id")
@@ -96,12 +96,16 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         """Setup clean sqlite database."""
 
-        async def _init() -> None:
+        async def _init(db: PyDB) -> None:
             metadata = MetaData()
-            async with engine.begin() as conn:
+            async with db._engine.begin() as conn:
                 await conn.run_sync(metadata.drop_all)
 
-        asyncio.run(_init())
+        asyncio.run(_init(ubr_db))
+        asyncio.run(_init(mbr_db))
+        asyncio.run(_init(muf_missing_union_db))
+        asyncio.run(_init(muf_wrong_pk_type_db))
+        asyncio.run(_init(type_conversion_error_db))
 
     async def test_undefined_back_reference(self) -> None:
         correct_error = False
