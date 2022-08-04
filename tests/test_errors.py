@@ -8,7 +8,6 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 from sqlalchemy import MetaData
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.errors import (
     MismatchingBackReferenceError,
