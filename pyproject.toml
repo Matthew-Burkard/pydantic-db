@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pydantic-db"
-version = "0.25.8"
+version = "0.25.9"
 description = "An asynchronous ORM that uses pydantic models."
 repository = "https://gitlab.com/mburkard/pydantic-db"
 homepage = "https://gitlab.com/mburkard/pydantic-db"
