@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel
 from pypika import PostgreSQLQuery, Query, Table
 from pypika.dialects import PostgreSQLQueryBuilder
+from pypika.queries import QueryBuilder
 
 from pydantic_db._models import TableMap
 from pydantic_db._types import ModelType
@@ -38,11 +39,11 @@ class PyDBQueryBuilder:
         self._table_map = table_map
         self._processed_models = processed_models or []
 
-    def get_insert_queries(self) -> list[Query]:
+    def get_insert_queries(self) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
         """Get queries to insert model tree."""
         return self._get_inserts_or_upserts(is_upsert=False)
 
-    def get_upsert_queries(self) -> list[Query]:
+    def get_upsert_queries(self) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
         """Get queries to upsert model tree."""
         return self._get_inserts_or_upserts(is_upsert=True)
 
@@ -61,7 +62,9 @@ class PyDBQueryBuilder:
     def get_delete_queries(self) -> list[Query]:
         """pass"""
 
-    def _get_inserts_or_upserts(self, is_upsert: bool) -> list[Query]:
+    def _get_inserts_or_upserts(
+        self, is_upsert: bool
+    ) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
         if self._model in self._processed_models:
             return []
         table_data = self._table_map.model_to_data[type(self._model)]
