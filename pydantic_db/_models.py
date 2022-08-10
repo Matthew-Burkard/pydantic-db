@@ -29,10 +29,11 @@ class Relationship(BaseModel):
 
     foreign_table: str
     relationship_type: RelationType
+    back_references: str | None = None
     mtm_data: MTMData | None = None
 
 
-class PyDBTable(BaseModel):
+class PyDBTableMeta(BaseModel):
     """Table metadata."""
 
     model: Type[ModelType]
@@ -50,5 +51,5 @@ class PyDBTable(BaseModel):
 class TableMap(BaseModel):
     """Map tablename to table data and model to table data."""
 
-    name_to_data: dict[str, PyDBTable] = Field(default_factory=lambda: {})
-    model_to_data: dict[ModelType, PyDBTable] = Field(default_factory=lambda: {})
+    name_to_data: dict[str, PyDBTableMeta] = Field(default_factory=lambda: {})
+    model_to_data: dict[ModelType, PyDBTableMeta] = Field(default_factory=lambda: {})

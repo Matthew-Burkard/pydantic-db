@@ -172,11 +172,12 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
             ice=["cubes"],
             size=Vector3(),
         )
-        await db[Coffee].insert(coffee)
+        await db[Coffee].insert(coffee, depth=2)
         # Find record and compare.
         coffee_dict = coffee.dict()
+        find_coffee = await db[Coffee].find_one(coffee.id, depth=1)
         self.assertDictEqual(
-            coffee_dict, (await db[Coffee].find_one(coffee.id, depth=1)).dict()
+            coffee_dict, find_coffee.dict()
         )
         coffee_dict["primary_flavor"] = coffee_dict["primary_flavor"]["id"]
         coffee_dict["secondary_flavor"] = coffee_dict["secondary_flavor"]["id"]

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pydantic-db"
-version = "0.25.10"
+version = "0.25.11"
 description = "An asynchronous ORM that uses pydantic models."
 repository = "https://gitlab.com/mburkard/pydantic-db"
 homepage = "https://gitlab.com/mburkard/pydantic-db"
@@ -17,7 +17,7 @@ Cython = "^0.29.32"
 
 [tool.poetry.dev-dependencies]
 mypy = "^0.971"
-coverage = "^6.4.2"
+coverage = "^6.4.3"
 aiosqlite = "^0.17.0"
 
 [build-system]

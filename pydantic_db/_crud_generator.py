@@ -15,7 +15,8 @@ from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
-from pydantic_db._table import PyDBTableMeta, Relation, RelationType
+from pydantic_db._models import PyDBTableMeta, Relationship, RelationType, TableMap
+from pydantic_db._query_builder import PyDBQueryBuilder
 from pydantic_db._types import ModelType
 from pydantic_db._util import tablename_from_model
 
@@ -35,17 +36,17 @@ class CRUDGenerator(Generic[ModelType]):
         self,
         tablename: str,
         engine: AsyncEngine,
-        schema: dict[str, PyDBTableMeta],
+        table_map: TableMap,
     ) -> None:
         """Provides DB CRUD methods for a model type.
 
         :param tablename: Name of the corresponding database table.
         :param engine: A SQL Alchemy async engine.
-        :param schema: Map of tablename to table information objects.
+        :param table_map: Map of tablenames and models.
         """
         self._tablename = tablename
         self._engine = engine
-        self._schema = schema
+        self._table_map = table_map
         self._field_to_column: dict[Any, str] = {}
 
     async def find_one(self, pk: Any, depth: int = 0) -> ModelType | None:
@@ -79,7 +80,7 @@ class CRUDGenerator(Generic[ModelType]):
         query = self._get_find_many_query(
             self._tablename, where, order_by, order, limit, offset, depth
         )
-        result = await self._execute(query)
+        result = await self._execute_query(query)
         # noinspection PyProtectedMember
         return Result(
             offset=offset,
@@ -88,15 +89,24 @@ class CRUDGenerator(Generic[ModelType]):
         )
 
     async def insert(
-        self, model_instance: ModelType, upsert_relations: bool = True
+        self,
+        model_instance: ModelType,
+        depth: int = 1,
     ) -> ModelType:
         """Insert a record.
 
+        If there is depth, a record will be inserted for the model and
+        each model in its model tree down to the provided depth.
+
         :param model_instance: Instance to save as database record.
-        :param upsert_relations: Upsert related table data if True.
+        :param depth: Determines how deep in the model tree to insert.
         :return: Inserted model.
         """
-        return await self._insert(model_instance, self._tablename, upsert_relations)
+        queries = PyDBQueryBuilder(
+            model_instance, self._table_map, depth
+        ).get_insert_queries()
+        await self._execute_queries(queries)
+        return model_instance
 
     async def update(
         self, model_instance: ModelType, upsert_relations: bool = True
@@ -124,9 +134,9 @@ class CRUDGenerator(Generic[ModelType]):
     async def delete(self, pk: Any) -> bool:
         """Delete a record."""
         table = Table(self._tablename)
-        await self._execute(
+        await self._execute_query(
             Query.from_(table)
-            .where(table.field(self._schema[self._tablename].pk) == pk)
+            .where(table.field(self._table_map.name_to_data[self._tablename].pk) == pk)
             .delete()
         )
         return True
@@ -134,7 +144,7 @@ class CRUDGenerator(Generic[ModelType]):
     async def _find_one(
         self, tablename: str, pk: Any, depth: int = 0
     ) -> ModelType | None:
-        table_data = self._schema[tablename]
+        table_data = self._table_map.name_to_data[tablename]
         table = Table(tablename)
         query, columns = self._build_joins(
             Query.from_(table),
@@ -145,7 +155,7 @@ class CRUDGenerator(Generic[ModelType]):
         query = query.where(
             table.field(table_data.pk) == self._py_type_to_sql(pk)
         ).select(*columns)
-        result = await self._execute(query)
+        result = await self._execute_query(query)
         try:
             # noinspection PyProtectedMember
             model_instance = self._model_from_row_mapping(
@@ -162,7 +172,7 @@ class CRUDGenerator(Generic[ModelType]):
         self, model_instance: ModelType, tablename: str, upsert_relations
     ) -> ModelType:
         # noinspection DuplicatedCode
-        table_data = self._schema[tablename]
+        table_data = self._table_map.name_to_data[tablename]
         table = Table(tablename)
         if upsert_relations:
             await self._upsert_relations(model_instance, table_data)
@@ -170,7 +180,7 @@ class CRUDGenerator(Generic[ModelType]):
         values = [
             self._py_type_to_sql(model_instance.__dict__[c]) for c in table_data.columns
         ]
-        await self._execute(
+        await self._execute_query(
             Query.into(table).columns(*table_data.columns).insert(*values)
         )
         return model_instance
@@ -179,7 +189,7 @@ class CRUDGenerator(Generic[ModelType]):
         self, model_instance: ModelType, tablename: str, upsert_relations: bool = True
     ) -> ModelType:
         # noinspection DuplicatedCode
-        table_data = self._schema[tablename]
+        table_data = self._table_map.name_to_data[tablename]
         table = Table(tablename)
         if upsert_relations:
             await self._upsert_relations(model_instance, table_data)
@@ -192,7 +202,7 @@ class CRUDGenerator(Generic[ModelType]):
             query = query.set(column, values[i])
         pk = model_instance.__dict__[table_data.pk]
         query = query.where(table.field(table_data.pk) == self._py_type_to_sql(pk))
-        await self._execute(query)
+        await self._execute_query(query)
         return model_instance
 
     async def _upsert(
@@ -200,7 +210,8 @@ class CRUDGenerator(Generic[ModelType]):
     ) -> ModelType:
         if model := (
             await self._find_one(
-                tablename, model_instance.__dict__[self._schema[tablename].pk]
+                tablename,
+                model_instance.__dict__[self._table_map.name_to_data[tablename].pk],
             )
         ):
             if model == model_instance:
@@ -212,15 +223,17 @@ class CRUDGenerator(Generic[ModelType]):
         self, model_instance: ModelType, table_data: PyDBTableMeta
     ) -> None:
         for column, relation in table_data.relationships.items():
-            if relation.relation_type == RelationType.MANY_TO_MANY:
+            if relation.relationship_type == RelationType.MANY_TO_MANY:
                 for rel_model in model_instance.__dict__.get(column) or []:
-                    rel_tablename = tablename_from_model(type(rel_model), self._schema)
+                    rel_tablename = tablename_from_model(
+                        type(rel_model), self._table_map
+                    )
                     await self._upsert(rel_model, rel_tablename, True)
                     await self._upsert_mtm_record(
                         model_instance, table_data, rel_model, relation, rel_tablename
                     )
             elif rel_model := model_instance.__dict__.get(column):
-                tablename = tablename_from_model(type(rel_model), self._schema)
+                tablename = tablename_from_model(type(rel_model), self._table_map)
                 await self._upsert(rel_model, tablename, True)
 
     async def _upsert_mtm_record(
@@ -228,12 +241,12 @@ class CRUDGenerator(Generic[ModelType]):
         model_instance: ModelType,
         table_data: PyDBTableMeta,
         rel_model: ModelType,
-        relation: Relation,
+        relation: Relationship,
         rel_tablename: str,
     ) -> None:
-        rel_td = self._schema[rel_tablename]
+        rel_td = self._table_map.name_to_data[rel_tablename]
         # Upsert mapping record into mtm mapping table.
-        mtm_table = Table(relation.mtm_data.name)
+        mtm_table = Table(relation.mtm_data.tablename)
         # Check if this mtm record already exists.
         columns = (relation.mtm_data.table_a_column, relation.mtm_data.table_b_column)
         values = (model_instance.__dict__[table_data.pk], rel_model.__dict__[rel_td.pk])
@@ -247,15 +260,15 @@ class CRUDGenerator(Generic[ModelType]):
                 == rel_model.__dict__[rel_td.pk]
             )
         )
-        res = await self._execute(query)
+        res = await self._execute_query(query)
         try:
             next(res)
             # Record exists, back out.
-            return
+            return None
         except StopIteration:
             pass
         query = Query.into(mtm_table).columns(*columns).insert(*values)
-        await self._execute(query)
+        await self._execute_query(query)
 
     async def _populate_many_relations(
         self, table_data: PyDBTableMeta, model_instance: ModelType, depth: int
@@ -271,7 +284,9 @@ class CRUDGenerator(Generic[ModelType]):
             models = await asyncio.gather(
                 *[
                     self._populate_many_relations(
-                        self._schema[relation.foreign_table], model, depth
+                        self._table_map.name_to_data[relation.foreign_table],
+                        model,
+                        depth,
                     )
                     for model in models
                 ]
@@ -281,7 +296,7 @@ class CRUDGenerator(Generic[ModelType]):
         if depth <= 0:
             return model_instance
         # For each field, populate the many relationships of that field.
-        for tablename, data in self._schema.items():
+        for tablename, data in self._table_map.name_to_data.items():
             for column in table_data.columns:
                 if type(model := model_instance.__dict__.get(column)) == data.model:
                     model = await self._populate_many_relations(data, model, depth)
@@ -289,12 +304,12 @@ class CRUDGenerator(Generic[ModelType]):
         return model_instance
 
     async def _find_many_relation(
-        self, table_data: PyDBTableMeta, pk: Any, relation: Relation, depth: int
+        self, table_data: PyDBTableMeta, pk: Any, relation: Relationship, depth: int
     ) -> list[ModelType] | None:
-        table = Table(table_data.name)
+        table = Table(table_data.tablename)
         foreign_table = Table(relation.foreign_table)
-        foreign_table_data = self._schema[relation.foreign_table]
-        if relation.relation_type == RelationType.ONE_TO_MANY:
+        foreign_table_data = self._table_map.name_to_data[relation.foreign_table]
+        if relation.relationship_type == RelationType.ONE_TO_MANY:
             many_result = await self._find_otm(
                 table_data,
                 foreign_table_data,
@@ -317,7 +332,7 @@ class CRUDGenerator(Generic[ModelType]):
         # noinspection PyProtectedMember
         return [
             self._model_from_row_mapping(
-                row._mapping, tablename=foreign_table_data.name
+                row._mapping, tablename=foreign_table_data.tablename
             )
             for row in many_result
         ]
@@ -326,7 +341,7 @@ class CRUDGenerator(Generic[ModelType]):
         self,
         table_data: PyDBTableMeta,
         foreign_table_data: PyDBTableMeta,
-        relation: Relation,
+        relation: Relationship,
         table: Table,
         foreign_table: Table,
         pk: Any,
@@ -342,37 +357,37 @@ class CRUDGenerator(Generic[ModelType]):
             .where(table.field(table_data.pk) == pk)
             .select(foreign_table.field(foreign_table_data.pk))
         )
-        result = await self._execute(query)
+        result = await self._execute_query(query)
         many_query = self._get_find_many_query(
-            foreign_table_data.name, depth=depth
+            foreign_table_data.tablename, depth=depth
         ).where(
             foreign_table.field(foreign_table_data.pk).isin([it[0] for it in result])
         )
-        return await self._execute(many_query)
+        return await self._execute_query(many_query)
 
     async def _find_mtm(
         self,
         table_data: PyDBTableMeta,
         foreign_table_data: PyDBTableMeta,
-        relation: Relation,
+        relation: Relationship,
         table: Table,
         foreign_table: Table,
         pk: Any,
         depth: int,
     ) -> Any:
-        mtm_table = Table(relation.mtm_data.name)
-        if relation.foreign_table == table_data.name:
-            mtm_field_a = f"{table_data.name}_a"
+        mtm_table = Table(relation.mtm_data.tablename)
+        if relation.foreign_table == table_data.tablename:
+            mtm_field_a = f"{table_data.tablename}_a"
             mtm_field_b = f"{relation.foreign_table}_b"
         else:
-            mtm_field_a = table_data.name
+            mtm_field_a = table_data.tablename
             mtm_field_b = relation.foreign_table
         query = (
             Query.from_(table)
             .left_join(mtm_table)
             .on(
                 mtm_table.field(mtm_field_a)
-                == table.field(self._schema[table_data.name].pk)
+                == table.field(self._table_map.name_to_data[table_data.tablename].pk)
             )
             .left_join(foreign_table)
             .on(
@@ -382,13 +397,13 @@ class CRUDGenerator(Generic[ModelType]):
             .where(table.field(table_data.pk) == pk)
             .select(foreign_table.field(foreign_table_data.pk))
         )
-        result = await self._execute(query)
+        result = await self._execute_query(query)
         many_query = self._get_find_many_query(
-            foreign_table_data.name, depth=depth
+            foreign_table_data.tablename, depth=depth
         ).where(
             foreign_table.field(foreign_table_data.pk).isin([it[0] for it in result])
         )
-        return await self._execute(many_query)
+        return await self._execute_query(many_query)
 
     def _get_find_many_query(
         self,
@@ -403,7 +418,7 @@ class CRUDGenerator(Generic[ModelType]):
         table = Table(tablename)
         where = where or {}
         order_by = order_by or []
-        pydb_table = self._schema[tablename]
+        pydb_table = self._table_map.name_to_data[tablename]
         query, columns = self._build_joins(
             Query.from_(table),
             pydb_table,
@@ -419,7 +434,7 @@ class CRUDGenerator(Generic[ModelType]):
             query = query.offset(offset)
         return query
 
-    async def _execute(self, query: QueryBuilder) -> Any:
+    async def _execute_query(self, query: QueryBuilder) -> Any:
         async_session = sessionmaker(
             self._engine, expire_on_commit=False, class_=AsyncSession
         )
@@ -429,6 +444,19 @@ class CRUDGenerator(Generic[ModelType]):
             await session.commit()
         await self._engine.dispose()
         return result
+
+    async def _execute_queries(self, queries: list[QueryBuilder]) -> Any:
+        async_session = sessionmaker(
+            self._engine, expire_on_commit=False, class_=AsyncSession
+        )
+        async with async_session() as session:
+            async with session.begin():
+                results = []
+                for query in queries:
+                    results.append(await session.execute(text(str(query))))
+            await session.commit()
+        await self._engine.dispose()
+        return results
 
     def _build_joins(
         self,
@@ -440,12 +468,16 @@ class CRUDGenerator(Generic[ModelType]):
     ) -> tuple[QueryBuilder, list[Field]]:
         if depth <= 0:
             return query, columns
-        if not (relationships := self._schema[table_data.name].relationships):
+        if not (
+            relationships := self._table_map.name_to_data[
+                table_data.tablename
+            ].relationships
+        ):
             return query, columns
         depth -= 1
-        table_tree = table_tree or table_data.name
-        pypika_table: Table = Table(table_data.name)
-        if table_data.name != table_tree:
+        table_tree = table_tree or table_data.tablename
+        pypika_table: Table = Table(table_data.tablename)
+        if table_data.tablename != table_tree:
             pypika_table = pypika_table.as_(table_tree)
         # For each related table, add join to query.
         for field_name, relation in relationships.items():
@@ -455,18 +487,22 @@ class CRUDGenerator(Generic[ModelType]):
             rel_table = Table(relation.foreign_table).as_(relation_name)
             query = query.left_join(rel_table).on(
                 pypika_table.field(field_name)
-                == rel_table.field(self._schema[relation.foreign_table].pk)
+                == rel_table.field(
+                    self._table_map.name_to_data[relation.foreign_table].pk
+                )
             )
             columns.extend(
                 [
                     rel_table.field(c).as_(f"{relation_name}//{depth}//{c}")
-                    for c in self._schema[relation.foreign_table].columns
+                    for c in self._table_map.name_to_data[
+                        relation.foreign_table
+                    ].columns
                 ]
             )
             # Add joins of relations of this table to query.
             query, new_cols = self._build_joins(
                 query,
-                self._schema[relation.foreign_table],
+                self._table_map.name_to_data[relation.foreign_table],
                 depth,
                 columns,
                 relation_name,
@@ -482,10 +518,12 @@ class CRUDGenerator(Generic[ModelType]):
         tablename: str | None = None,
     ) -> ModelType:
         tablename = tablename or self._tablename
-        model_type = model_type or self._schema[tablename].model
+        model_type = model_type or self._table_map.name_to_data[tablename].model
         table_tree = table_tree or tablename
         py_type = {}
-        table_data = self._schema[tablename_from_model(model_type, self._schema)]
+        table_data = self._table_map.name_to_data[
+            tablename_from_model(model_type, self._table_map)
+        ]
         for column, value in row_mapping.items():
             if not column.startswith(f"{table_tree}//"):
                 # This must be a column somewhere else in the tree.
@@ -497,7 +535,7 @@ class CRUDGenerator(Generic[ModelType]):
                 if value is None:
                     # No further depth has been found.
                     continue
-                foreign_table = self._schema[
+                foreign_table = self._table_map.name_to_data[
                     table_data.relationships[column_name].foreign_table
                 ]
                 if depth <= 0:
@@ -522,7 +560,11 @@ class CRUDGenerator(Generic[ModelType]):
 
     def _tablename_from_model_instance(self, model: BaseModel) -> str:
         # noinspection PyTypeHints
-        return [k for k, v in self._schema.items() if isinstance(model, v.model)][0]
+        return [
+            k
+            for k, v in self._table_map.name_to_data.items()
+            if isinstance(model, v.model)
+        ][0]
 
     def _py_type_to_sql(self, value: Any) -> Any:
         if self._engine.name != "postgres" and isinstance(value, UUID):
@@ -530,10 +572,12 @@ class CRUDGenerator(Generic[ModelType]):
         if isinstance(value, (dict, list)):
             return json.dumps(value)
         if isinstance(value, BaseModel) and type(value) in [
-            it.model for it in self._schema.values()
+            it.model for it in self._table_map.name_to_data.values()
         ]:
             tablename = self._tablename_from_model_instance(value)
-            return self._py_type_to_sql(value.__dict__[self._schema[tablename].pk])
+            return self._py_type_to_sql(
+                value.__dict__[self._table_map.name_to_data[tablename].pk]
+            )
         if isinstance(value, BaseModel):
             return value.json()
         return value
@@ -547,7 +591,7 @@ class CRUDGenerator(Generic[ModelType]):
     ) -> Any:
         type_ = None
         for arg in get_args(model_type.__fields__[field_name].type_):
-            if arg in self._schema.values() or arg is NoneType:
+            if arg in self._table_map.name_to_data.values() or arg is NoneType:
                 continue
             type_ = arg
         if type_:
@@ -556,9 +600,9 @@ class CRUDGenerator(Generic[ModelType]):
 
     @staticmethod
     def _columns(table_data: PyDBTableMeta, depth: int) -> list[Field]:
-        table = Table(table_data.name)
+        table = Table(table_data.tablename)
         return [
-            table.field(c).as_(f"{table_data.name}//{depth}//{c}")
+            table.field(c).as_(f"{table_data.tablename}//{depth}//{c}")
             for c in table_data.columns
         ]
 

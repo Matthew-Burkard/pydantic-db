@@ -89,3 +89,11 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         flavors = [it.value for it in find_b.many]
         flavors.sort()
         self.assertListEqual(["caramel", "mocha"], flavors)
+
+    # async def test_many_to_self_insert_and_get(self) -> None:
+    #     many_to_self_1 = ManyToSelf()
+    #     many_to_self_2 = ManyToSelf()
+    #     many_to_self_1.many = [many_to_self_2]
+    #     await db[ManyToSelf].insert(many_to_self_1)
+    #     find_mts = await db[ManyToSelf].find_one(many_to_self_1.id)
+    #     self.assertEqual(many_to_self_2.id, find_mts.many[0].id)

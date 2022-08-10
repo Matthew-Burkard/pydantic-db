@@ -57,7 +57,7 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
             Many(one_a=one_a, one_b=one_b),
         ]
         for many in many_a + many_b:
-            await db[Many].insert(many)
+            await db[Many].insert(many, depth=2)
         find_one_a = await db[One].find_one(one_a.id, depth=2)
         many_a_plus_b = many_a + many_b
         many_a_plus_b.sort(key=lambda x: x.id)
