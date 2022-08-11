@@ -8,7 +8,7 @@ from pypika import PostgreSQLQuery, Query, Table
 from pypika.dialects import PostgreSQLQueryBuilder
 from pypika.queries import QueryBuilder
 
-from pydantic_db._models import TableMap
+from pydantic_db._models import Relationship, TableMap
 from pydantic_db._types import ModelType
 from pydantic_db._util import tablename_from_model_instance
 
@@ -35,7 +35,9 @@ class PyDBQueryBuilder:
         self._depth = depth
         self._model = model
         # PostgreSQLQuery works for SQLite and PostgreSQL.
-        self._query = query or PostgreSQLQuery
+        self._query: QueryBuilder | PostgreSQLQueryBuilder | Query | PostgreSQLQuery = (
+            query or PostgreSQLQuery
+        )
         self._table_map = table_map
         self._processed_models = processed_models or []
 
@@ -100,7 +102,7 @@ class PyDBQueryBuilder:
                             processed_models=self._processed_models + [self._model],
                         ).get_upsert_queries()
                     )
-                    queries.extend(self._get_mtm_upsert())
+                    queries.append(self._get_mtm_upsert(rel, model))
             else:
                 queries.extend(
                     PyDBQueryBuilder(
@@ -113,10 +115,21 @@ class PyDBQueryBuilder:
         return queries
 
     def _get_mtm_upsert(
-        self, relation: ModelType
+        self, relation: Relationship, rel_model: ModelType
     ) -> QueryBuilder | PostgreSQLQueryBuilder:
-        pass
-        # TODO Get mtm table.
+        table_data = self._table_map.model_to_data[type(self._model)]
+        r_data = self._table_map.model_to_data[type(rel_model)]
+        table = Table(relation.mtm_data.tablename)
+        col_a = table.field(relation.mtm_data.table_a_column)
+        col_b = table.field(relation.mtm_data.table_b_column)
+        return (
+            PostgreSQLQuery.into(table)
+            .columns(col_a, col_b)
+            .insert(self._model.__dict__[table_data.pk], rel_model.__dict__[r_data.pk])
+            .on_conflict(col_a, col_b)
+            .do_update(col_a)
+            .do_update(col_b)
+        )
 
     def _py_type_to_sql(self, value: Any) -> Any:
         if isinstance(value, UUID):

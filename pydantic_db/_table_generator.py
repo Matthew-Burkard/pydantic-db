@@ -112,10 +112,6 @@ class DBTableGenerator:
         # Get foreign table name from schema.
         if back_reference := table_data.back_references.get(field_name):
             foreign_table = tablename_from_model(field.type_, self._table_map)
-            try:
-                table_data.relationships[field_name]
-            except KeyError:
-                print(table_data)
             if (
                 table_data.relationships[field_name].relationship_type
                 != RelationType.MANY_TO_MANY
@@ -126,8 +122,6 @@ class DBTableGenerator:
             col_a, col_b = self._get_mtm_column_names(
                 table_data.tablename, foreign_table
             )
-            if table_data.relationships[field_name].mtm_data is None:
-                raise Exception("")
             mtm_data = MTMData(
                 tablename=table_data.relationships[field_name].mtm_data.tablename,
                 table_a=table_data.tablename,
@@ -146,6 +140,7 @@ class DBTableGenerator:
                 *self._get_mtm_columns(
                     table_data.tablename, foreign_table, col_a, col_b
                 ),
+                UniqueConstraint(col_a, col_b)
             )
             return None
         for arg in get_args(field.type_):
