@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pydantic-db"
-version = "0.26.1"
+version = "0.26.2"
 description = "An asynchronous ORM that uses pydantic models."
 repository = "https://gitlab.com/mburkard/pydantic-db"
 homepage = "https://gitlab.com/mburkard/pydantic-db"
@@ -9,7 +9,7 @@ authors = ["Matthew Burkard <matthewjburkard@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-pydantic = "^1.9.1"
+pydantic = "^1.9.2"
 case-switcher = "^1.3.0"
 SQLAlchemy = {extras = ["asyncio"], version = "^1.4.35"}
 PyPika = "^0.48.9"
