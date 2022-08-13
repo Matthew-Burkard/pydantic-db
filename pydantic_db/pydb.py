@@ -73,7 +73,6 @@ class PyDB:
                 indexed=indexed or [],
                 unique=unique or [],
                 unique_constraints=unique_constraints or [],
-                columns=[],
                 relationships={},
                 back_references=back_references or {},
             )
@@ -87,8 +86,7 @@ class PyDB:
         """Generate database tables from PyDB models."""
         # Populate relation information.
         for tablename, table_data in self._table_map.name_to_data.items():
-            cols, rels = self._get_columns_and_relationships(tablename, table_data)
-            table_data.columns = cols
+            rels = self._get_columns_and_relationships(tablename, table_data)
             table_data.relationships = rels
         # Now that relation information is populated generate tables.
         self._metadata = MetaData()
@@ -105,13 +103,11 @@ class PyDB:
 
     def _get_columns_and_relationships(
         self, tablename: str, table_data: PyDBTableMeta
-    ) -> tuple[list[str], dict[str, Relationship]]:
-        columns = []
+    ) -> dict[str, Relationship]:
         relationships = {}
         for field_name, field in table_data.model.__fields__.items():
             related_table = self._get_related_table(field)
             if related_table is None:
-                columns.append(field_name)
                 continue
             # Check if back-reference is present but mismatched in type.
             back_reference = table_data.back_references.get(field_name)
@@ -141,7 +137,6 @@ class PyDB:
                         related_table.model,
                         related_table.model.__fields__[related_table.pk].type_.__name__,
                     )
-                columns.append(field_name)
                 relationships[field_name] = Relationship(
                     foreign_table=related_table.tablename,
                     relationship_type=RelationType.ONE_TO_MANY,
@@ -174,7 +169,7 @@ class PyDB:
                 back_references=back_reference,
                 mtm_data=MTMData(tablename=mtm_tablename),
             )
-        return columns, relationships
+        return relationships
 
     def _get_related_table(self, field: Field) -> PyDBTableMeta:
         related_table: PyDBTableMeta | None = None

@@ -201,7 +201,7 @@ class CRUDGenerator(Generic[ModelType]):
             return model_instance
         # For each field, populate the many relationships of that field.
         for tablename, data in self._table_map.name_to_data.items():
-            for column in table_data.columns:
+            for column in table_data.model.__fields__:
                 if type(model := model_instance.__dict__.get(column)) == data.model:
                     model = await self._populate_many_relations(data, model, depth)
                     model_instance.__setattr__(column, model)
@@ -400,7 +400,7 @@ class CRUDGenerator(Generic[ModelType]):
                     rel_table.field(c).as_(f"{relation_name}//{depth}//{c}")
                     for c in self._table_map.name_to_data[
                         relation.foreign_table
-                    ].columns
+                    ].model.__fields__
                 ]
             )
             # Add joins of relations of this table to query.
@@ -507,7 +507,7 @@ class CRUDGenerator(Generic[ModelType]):
         table = Table(table_data.tablename)
         return [
             table.field(c).as_(f"{table_data.tablename}//{depth}//{c}")
-            for c in table_data.columns
+            for c in table_data.model.__fields__
         ]
 
     @staticmethod
