@@ -34,6 +34,7 @@ class DBTableGenerator:
         self._metadata = metadata
         self._table_map = table_map
         self._mtm: dict[str, str] = {}  # {table_a name: table_b field name}
+        self._tables: list[str] = []
 
     async def init(self) -> None:
         """Generate SQL Alchemy tables."""
@@ -42,6 +43,7 @@ class DBTableGenerator:
                 UniqueConstraint(*cols, name=f"{'_'.join(cols)}_constraint")
                 for cols in table_data.unique_constraints
             )
+            self._tables.append(tablename)
             Table(
                 tablename,
                 self._metadata,
@@ -130,17 +132,20 @@ class DBTableGenerator:
                 table_b_column=col_b,
             )
             table_data.relationships[field_name].mtm_data = mtm_data
-            if self._mtm.get(f"{table_data.tablename}.{back_reference}") == field_name:
+            tablename = table_data.relationships[field_name].mtm_data.tablename
+            if tablename in self._tables:
                 # This mtm has already been made.
                 return None
             # Create joining mtm table.
+            mtm_columns = self._get_mtm_columns(
+                table_data.tablename, foreign_table, col_a, col_b
+            )
+            self._tables.append(tablename)
             Table(
-                table_data.relationships[field_name].mtm_data.tablename,
+                tablename,
                 self._metadata,
-                *self._get_mtm_columns(
-                    table_data.tablename, foreign_table, col_a, col_b
-                ),
-                UniqueConstraint(col_a, col_b)
+                *mtm_columns,
+                UniqueConstraint(*mtm_columns),
             )
             return None
         for arg in get_args(field.type_):
