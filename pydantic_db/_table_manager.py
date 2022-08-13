@@ -1,4 +1,4 @@
-"""Generate Python CRUD methods for a model."""
+"""Handle table interactions for a model."""
 import asyncio
 import json
 import re
@@ -29,8 +29,8 @@ class Result(GenericModel, Generic[ModelType]):
     data: list[ModelType]
 
 
-class CRUDGenerator(Generic[ModelType]):
-    """Provides DB CRUD methods for a model type."""
+class TableManager(Generic[ModelType]):
+    """Provides DB CRUD methods and table information for a model."""
 
     def __init__(
         self,

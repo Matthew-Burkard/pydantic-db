@@ -7,7 +7,7 @@ from pydantic import Field
 from sqlalchemy import MetaData  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine  # type: ignore
 
-from pydantic_db._crud_generator import CRUDGenerator
+from pydantic_db._table_manager import TableManager
 from pydantic_db._models import (
     MTMData,
     PyDBTableMeta,
@@ -35,11 +35,11 @@ class PyDB:
             engine.
         """
         self._metadata: MetaData | None = None
-        self._crud_generators: dict[Type, CRUDGenerator] = {}
+        self._crud_generators: dict[Type, TableManager] = {}
         self._engine = create_async_engine(connection_str)
         self._table_map: TableMap = TableMap()
 
-    def __getitem__(self, item: Type[ModelType]) -> CRUDGenerator[ModelType]:
+    def __getitem__(self, item: Type[ModelType]) -> TableManager[ModelType]:
         return self._crud_generators[item]
 
     def table(
@@ -98,7 +98,7 @@ class PyDB:
         self._metadata = MetaData()
         for tablename, table_data in self._table_map.name_to_data.items():
             # noinspection PyTypeChecker
-            self._crud_generators[table_data.model] = CRUDGenerator(
+            self._crud_generators[table_data.model] = TableManager(
                 tablename,
                 self._engine,
                 self._table_map,
