@@ -44,7 +44,7 @@ class CRUDGenerator(Generic[ModelType]):
         :param engine: A SQL Alchemy async engine.
         :param table_map: Map of tablenames and models.
         """
-        self._tablename = tablename
+        self.tablename = tablename
         self._engine = engine
         self._table_map = table_map
         self._field_to_column: dict[Any, str] = {}
@@ -56,7 +56,7 @@ class CRUDGenerator(Generic[ModelType]):
         :param depth: ORM fetch depth.
         :return: A model representing the record if it exists else None.
         """
-        return await self._find_one(self._tablename, pk, depth)
+        return await self._find_one(self.tablename, pk, depth)
 
     async def find_many(
         self,
@@ -78,7 +78,7 @@ class CRUDGenerator(Generic[ModelType]):
         :return: A list of models representing table records.
         """
         query = self._get_find_many_query(
-            self._tablename, where, order_by, order, limit, offset, depth
+            self.tablename, where, order_by, order, limit, offset, depth
         )
         result = await self._execute_query(query)
         # noinspection PyProtectedMember
@@ -121,9 +121,7 @@ class CRUDGenerator(Generic[ModelType]):
         await self._execute_queries(queries)
         return model_instance
 
-    async def upsert(
-        self, model_instance: ModelType, depth: int = 1
-    ) -> ModelType:
+    async def upsert(self, model_instance: ModelType, depth: int = 1) -> ModelType:
         """Insert a record if it does not exist, else update it.
 
         :param model_instance: Model representing record to insert or
@@ -139,10 +137,10 @@ class CRUDGenerator(Generic[ModelType]):
 
     async def delete(self, pk: Any) -> bool:
         """Delete a record."""
-        table = Table(self._tablename)
+        table = Table(self.tablename)
         await self._execute_query(
             Query.from_(table)
-            .where(table.field(self._table_map.name_to_data[self._tablename].pk) == pk)
+            .where(table.field(self._table_map.name_to_data[self.tablename].pk) == pk)
             .delete()
         )
         return True
@@ -421,7 +419,7 @@ class CRUDGenerator(Generic[ModelType]):
         table_tree: str | None = None,
         tablename: str | None = None,
     ) -> ModelType:
-        tablename = tablename or self._tablename
+        tablename = tablename or self.tablename
         model_type = model_type or self._table_map.name_to_data[tablename].model
         table_tree = table_tree or tablename
         py_type = {}
