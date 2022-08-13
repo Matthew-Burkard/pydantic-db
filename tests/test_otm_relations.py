@@ -9,8 +9,7 @@ from pydantic import BaseModel, Field
 
 from pydantic_db.pydb import PyDB
 
-connection_str = "sqlite+aiosqlite:///db.sqlite3"
-db = PyDB(connection_str)
+db = PyDB("sqlite+aiosqlite:///db.sqlite3")
 
 
 @db.table(pk="id", back_references={"many_a": "one_a", "many_b": "one_b"})
@@ -18,8 +17,9 @@ class One(BaseModel):
     """One will have many "Many"."""
 
     id: UUID = Field(default_factory=uuid4)
-    many_a: list[Many] | None = None
+    many_a: list[Many] = Field(default_factory=lambda: [])
     many_b: list[Many] | None = None
+    attribute: str | None = None
 
 
 @db.table(pk="id")
