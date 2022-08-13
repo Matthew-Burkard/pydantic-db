@@ -73,4 +73,11 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         self.assertDictEqual(find_one_a.dict(), many_a_idx_zero.one_a.dict())
 
     async def test_one_to_many_update(self) -> None:
-        pass
+        one = One()
+        many = Many(one_a=one)
+        await db[Many].insert(many, depth=2)
+        value = "coffee"
+        one.attribute = value
+        await db[Many].update(many, depth=2)
+        find = await db[One].find_one(one.id)
+        self.assertEqual(value, find.attribute)
