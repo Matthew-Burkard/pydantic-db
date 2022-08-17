@@ -19,7 +19,7 @@ python-versions = ">=3.9,<4.0"
 
 [[package]]
 name = "coverage"
-version = "6.4.3"
+version = "6.4.4"
 description = "Code coverage measurement for Python"
 category = "dev"
 optional = false
@@ -147,7 +147,7 @@ python-versions = ">=3.7"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "970c275ae04d863ccb3c57952dc9f87cf7f201bad59911b73e7b76554a3a5d54"
+content-hash = "1a55a96bb51861ad71eab60181ae95a541b6b198f99c1fa1ab15de19ed25862e"
 
 [metadata.files]
 aiosqlite = [
