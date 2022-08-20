@@ -40,21 +40,25 @@ class PyDBQueryBuilder:
         self._table_data = self._table_map.model_to_data[type(self._model)]
         self._table = Table(self._table_data.tablename)
 
-    def get_insert_queries(self) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
+    def get_insert_query(self) -> QueryBuilder | PostgreSQLQueryBuilder:
         """Get queries to insert model tree."""
         return self._get_inserts_or_upserts(is_upsert=False)
 
-    def get_upsert_queries(self) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
+    def get_upsert_query(self) -> QueryBuilder | PostgreSQLQueryBuilder:
         """Get queries to upsert model tree."""
         return self._get_inserts_or_upserts(is_upsert=True)
 
-    def get_find_one_query(self, depth: int = 1, processed_models: list[ModelType] | None = None) -> Query:
+    def get_find_one_query(
+        self, depth: int = 1, processed_models: list[ModelType] | None = None
+    ) -> Query:
         """pass"""
 
-    def get_find_many_query(self, depth: int = 1, processed_models: list[ModelType] | None = None) -> Query:
+    def get_find_many_query(
+        self, depth: int = 1, processed_models: list[ModelType] | None = None
+    ) -> Query:
         """pass"""
 
-    def get_update_queries(self) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
+    def get_update_queries(self) -> QueryBuilder | PostgreSQLQueryBuilder:
         """Get queries to update model tree."""
         self._query = self._query.update(self._table)
         for column, value in self._get_columns_and_values().items():
@@ -63,19 +67,14 @@ class PyDBQueryBuilder:
             self._table.field(self._table_data.pk)
             == self._model.__dict__[self._table_data.pk]
         )
-        queries = [self._query]
-        return queries
+        return self._query
 
     def get_patch_queries(self) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
         """pass"""
 
-    def get_delete_queries(self) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
-        """Get delete query for the given model."""
-        # TODO For each mtm, delete any mappings to this record.
-
     def _get_inserts_or_upserts(
         self, is_upsert: bool
-    ) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
+    ) -> QueryBuilder | PostgreSQLQueryBuilder:
         col_to_value = self._get_columns_and_values()
         self._query = (
             self._query.into(self._table)
@@ -89,8 +88,7 @@ class PyDBQueryBuilder:
                     self._query = self._query.do_update(
                         self._table.field(column), value
                     )
-        queries = [self._query]
-        return queries
+        return self._query
 
     def _get_columns_and_values(self):
         return {

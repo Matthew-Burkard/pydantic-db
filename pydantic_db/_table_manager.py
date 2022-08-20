@@ -97,8 +97,9 @@ class TableManager(Generic[ModelType]):
         :param model_instance: Instance to save as database record.
         :return: Inserted model.
         """
-        queries = PyDBQueryBuilder(model_instance, self._table_map).get_insert_queries()
-        await self._execute_queries(queries)
+        await self._execute_query(
+            PyDBQueryBuilder(model_instance, self._table_map).get_insert_query()
+        )
         return model_instance
 
     async def update(self, model_instance: ModelType) -> ModelType:
@@ -107,8 +108,9 @@ class TableManager(Generic[ModelType]):
         :param model_instance: Model representing record to update.
         :return: The updated model.
         """
-        queries = PyDBQueryBuilder(model_instance, self._table_map).get_update_queries()
-        await self._execute_queries(queries)
+        await self._execute_query(
+            PyDBQueryBuilder(model_instance, self._table_map).get_update_queries()
+        )
         return model_instance
 
     async def upsert(self, model_instance: ModelType) -> ModelType:
@@ -118,8 +120,9 @@ class TableManager(Generic[ModelType]):
             update.
         :return: The inserted or updated model.
         """
-        queries = PyDBQueryBuilder(model_instance, self._table_map).get_upsert_queries()
-        await self._execute_queries(queries)
+        await self._execute_query(
+            PyDBQueryBuilder(model_instance, self._table_map).get_upsert_query()
+        )
         return model_instance
 
     async def delete(self, pk: Any) -> bool:
@@ -276,19 +279,6 @@ class TableManager(Generic[ModelType]):
             await session.commit()
         await self._engine.dispose()
         return result
-
-    async def _execute_queries(self, queries: list[QueryBuilder]) -> Any:
-        async_session = sessionmaker(
-            self._engine, expire_on_commit=False, class_=AsyncSession
-        )
-        async with async_session() as session:
-            async with session.begin():
-                results = []
-                for query in queries:
-                    results.append(await session.execute(text(str(query))))
-            await session.commit()
-        await self._engine.dispose()
-        return results
 
     def _build_joins(
         self,
