@@ -7,17 +7,14 @@ from pydantic import Field
 from sqlalchemy import MetaData  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine  # type: ignore
 
-from pydantic_db._table_manager import TableManager
 from pydantic_db._models import (
-    MTMData,
     PyDBTableMeta,
     Relationship,
-    RelationType,
     TableMap,
 )
 from pydantic_db._table_generator import DBTableGenerator
+from pydantic_db._table_manager import TableManager
 from pydantic_db._types import ModelType
-from pydantic_db._util import get_joining_tablename
 from pydantic_db.errors import (
     MismatchingBackReferenceError,
     MustUnionForeignKeyError,
@@ -140,8 +137,7 @@ class PyDB:
                     related_table.model.__fields__[related_table.pk].type_.__name__,
                 )
             relationships[field_name] = Relationship(
-                foreign_table=related_table.tablename,
-                relationship_type=RelationType.ONE_TO_MANY,
+                foreign_table=related_table.tablename
             )
         return relationships
 
@@ -179,24 +175,6 @@ class PyDB:
                 back_reference,
             )
         # Is the back referenced field also a list?
-        is_mtm = get_origin(back_referenced_field.outer_type_) == list
-        relation_type = RelationType.ONE_TO_MANY
-        mtm_tablename = None
-        if is_mtm:
-            relation_type = RelationType.MANY_TO_MANY
-            # Get mtm tablename or make one.
-            if rel := related_table.relationships.get(back_reference):
-                mtm_tablename = rel.mtm_data.tablename
-            else:
-                mtm_tablename = get_joining_tablename(
-                    table_data.tablename,
-                    field_name,
-                    related_table.tablename,
-                    back_reference,
-                )
         return Relationship(
-            foreign_table=related_table.tablename,
-            relationship_type=relation_type,
-            back_references=back_reference,
-            mtm_data=MTMData(tablename=mtm_tablename),
+            foreign_table=related_table.tablename, back_references=back_reference
         )

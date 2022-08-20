@@ -50,6 +50,8 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
     async def test_one_to_many_insert_and_get(self) -> None:
         one_a = One()
         one_b = One()
+        await db[One].insert(one_a)
+        await db[One].insert(one_b)
         many_a = [Many(one_a=one_a), Many(one_a=one_a)]
         many_b = [
             Many(one_a=one_a, one_b=one_b),
@@ -57,7 +59,7 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
             Many(one_a=one_a, one_b=one_b),
         ]
         for many in many_a + many_b:
-            await db[Many].insert(many, depth=2)
+            await db[Many].insert(many)
         find_one_a = await db[One].find_one(one_a.id, depth=2)
         many_a_plus_b = many_a + many_b
         many_a_plus_b.sort(key=lambda x: x.id)
@@ -71,13 +73,3 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         self.assertListEqual([], find_one_b.many_a)
         many_a_idx_zero = await db[Many].find_one(many_a[0].id, depth=3)
         self.assertDictEqual(find_one_a.dict(), many_a_idx_zero.one_a.dict())
-
-    async def test_one_to_many_update(self) -> None:
-        one = One()
-        many = Many(one_a=one)
-        await db[Many].insert(many, depth=2)
-        value = "coffee"
-        one.attribute = value
-        await db[Many].update(many, depth=2)
-        find = await db[One].find_one(one.id)
-        self.assertEqual(value, find.attribute)

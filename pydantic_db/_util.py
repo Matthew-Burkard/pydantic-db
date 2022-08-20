@@ -22,10 +22,3 @@ def tablename_from_model_instance(model: BaseModel, table_map: TableMap) -> str:
     return [k for k, v in table_map.name_to_data.items() if isinstance(model, v.model)][
         0
     ]
-
-
-def get_joining_tablename(
-    table: str, column: str, other_table: str, other_column: str
-) -> str:
-    """Get the name of a table joining two tables in an MTM relation."""
-    return f"{table}.{column}-to-{other_table}.{other_column}"
