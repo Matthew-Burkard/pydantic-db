@@ -4,9 +4,9 @@ from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
-from pypika import PostgreSQLQuery, Query, Table
-from pypika.dialects import PostgreSQLQueryBuilder
-from pypika.queries import QueryBuilder
+from pypika import PostgreSQLQuery, Query, Table  # type: ignore
+from pypika.dialects import PostgreSQLQueryBuilder  # type: ignore
+from pypika.queries import QueryBuilder  # type: ignore
 
 from pydantic_db._models import TableMap
 from pydantic_db._types import ModelType

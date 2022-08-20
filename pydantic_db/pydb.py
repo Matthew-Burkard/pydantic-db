@@ -3,7 +3,7 @@ from types import UnionType
 from typing import Callable, ForwardRef, get_args, get_origin, Type
 
 import caseswitcher
-from pydantic import Field
+from pydantic.fields import ModelField
 from sqlalchemy import MetaData  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine  # type: ignore
 
@@ -64,7 +64,7 @@ class PyDB:
         def _wrapper(cls: Type[ModelType]) -> Type[ModelType]:
             tablename_ = tablename or caseswitcher.to_snake(cls.__name__)
             cls_back_references = back_references or {}
-            table_metadata = PyDBTableMeta(
+            table_metadata = PyDBTableMeta[ModelType](
                 model=cls,
                 tablename=tablename_,
                 pk=pk,
@@ -141,7 +141,7 @@ class PyDB:
             )
         return relationships
 
-    def _get_related_table(self, field: Field) -> PyDBTableMeta | None:
+    def _get_related_table(self, field: ModelField) -> PyDBTableMeta | None:
         related_table: PyDBTableMeta | None = None
         # Try to get foreign model from union.
         if args := get_args(field.type_):

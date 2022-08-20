@@ -1,7 +1,8 @@
 """Module for PyDB data models."""
-from typing import Type
+from typing import Generic, Type
 
 from pydantic import BaseModel, Field
+from pydantic.generics import GenericModel
 
 from pydantic_db._types import ModelType
 
@@ -13,7 +14,7 @@ class Relationship(BaseModel):
     back_references: str | None = None
 
 
-class PyDBTableMeta(BaseModel):
+class PyDBTableMeta(GenericModel, Generic[ModelType]):
     """Table metadata."""
 
     model: Type[ModelType]
@@ -31,5 +32,9 @@ class PyDBTableMeta(BaseModel):
 class TableMap(BaseModel):
     """Map tablename to table data and model to table data."""
 
-    name_to_data: dict[str, PyDBTableMeta] = Field(default_factory=lambda: {})
-    model_to_data: dict[ModelType, PyDBTableMeta] = Field(default_factory=lambda: {})
+    name_to_data: dict[str, PyDBTableMeta] = Field(  # type: ignore
+        default_factory=lambda: {}
+    )
+    model_to_data: dict[ModelType, PyDBTableMeta] = Field(  # type: ignore
+        default_factory=lambda: {}
+    )
