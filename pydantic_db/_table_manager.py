@@ -15,7 +15,7 @@ from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
-from pydantic_db._models import PyDBTableMeta, Relationship, RelationType, TableMap
+from pydantic_db._models import PyDBTableMeta, Relationship, TableMap
 from pydantic_db._query_builder import PyDBQueryBuilder
 from pydantic_db._types import ModelType
 from pydantic_db._util import tablename_from_model
@@ -88,50 +88,37 @@ class TableManager(Generic[ModelType]):
             data=[self._model_from_row_mapping(row._mapping) for row in result],
         )
 
-    async def insert(
-        self,
-        model_instance: ModelType,
-        depth: int = 1,
-    ) -> ModelType:
+    async def insert(self, model_instance: ModelType) -> ModelType:
         """Insert a record.
 
         If there is depth, a record will be inserted for the model and
         each model in its model tree down to the provided depth.
 
         :param model_instance: Instance to save as database record.
-        :param depth: Determines how deep in the model tree to insert.
         :return: Inserted model.
         """
-        queries = PyDBQueryBuilder(
-            model_instance, self._table_map, depth
-        ).get_insert_queries()
+        queries = PyDBQueryBuilder(model_instance, self._table_map).get_insert_queries()
         await self._execute_queries(queries)
         return model_instance
 
-    async def update(self, model_instance: ModelType, depth: int = 1) -> ModelType:
+    async def update(self, model_instance: ModelType) -> ModelType:
         """Update a record.
 
         :param model_instance: Model representing record to update.
-        :param depth: Determines how deep in the model tree to upsert.
         :return: The updated model.
         """
-        queries = PyDBQueryBuilder(
-            model_instance, self._table_map, depth
-        ).get_update_queries()
+        queries = PyDBQueryBuilder(model_instance, self._table_map).get_update_queries()
         await self._execute_queries(queries)
         return model_instance
 
-    async def upsert(self, model_instance: ModelType, depth: int = 1) -> ModelType:
+    async def upsert(self, model_instance: ModelType) -> ModelType:
         """Insert a record if it does not exist, else update it.
 
         :param model_instance: Model representing record to insert or
             update.
-        :param depth: Determines how deep in the model tree to upsert.
         :return: The inserted or updated model.
         """
-        queries = PyDBQueryBuilder(
-            model_instance, self._table_map, depth
-        ).get_upsert_queries()
+        queries = PyDBQueryBuilder(model_instance, self._table_map).get_upsert_queries()
         await self._execute_queries(queries)
         return model_instance
 
@@ -211,26 +198,9 @@ class TableManager(Generic[ModelType]):
         table = Table(table_data.tablename)
         foreign_table = Table(relation.foreign_table)
         foreign_table_data = self._table_map.name_to_data[relation.foreign_table]
-        if relation.relationship_type == RelationType.ONE_TO_MANY:
-            many_result = await self._find_otm(
-                table_data,
-                foreign_table_data,
-                relation,
-                table,
-                foreign_table,
-                pk,
-                depth,
-            )
-        else:
-            many_result = await self._find_mtm(
-                table_data,
-                foreign_table_data,
-                relation,
-                table,
-                foreign_table,
-                pk,
-                depth,
-            )
+        many_result = await self._find_otm(
+            table_data, foreign_table_data, relation, table, foreign_table, pk, depth
+        )
         # noinspection PyProtectedMember
         return [
             self._model_from_row_mapping(
@@ -255,46 +225,6 @@ class TableManager(Generic[ModelType]):
             .on(
                 foreign_table.field(relation.back_references)
                 == table.field(table_data.pk)
-            )
-            .where(table.field(table_data.pk) == pk)
-            .select(foreign_table.field(foreign_table_data.pk))
-        )
-        result = await self._execute_query(query)
-        many_query = self._get_find_many_query(
-            foreign_table_data.tablename, depth=depth
-        ).where(
-            foreign_table.field(foreign_table_data.pk).isin([it[0] for it in result])
-        )
-        return await self._execute_query(many_query)
-
-    async def _find_mtm(
-        self,
-        table_data: PyDBTableMeta,
-        foreign_table_data: PyDBTableMeta,
-        relation: Relationship,
-        table: Table,
-        foreign_table: Table,
-        pk: Any,
-        depth: int,
-    ) -> Any:
-        mtm_table = Table(relation.mtm_data.tablename)
-        if relation.foreign_table == table_data.tablename:
-            mtm_field_a = f"{table_data.tablename}_a"
-            mtm_field_b = f"{relation.foreign_table}_b"
-        else:
-            mtm_field_a = table_data.tablename
-            mtm_field_b = relation.foreign_table
-        query = (
-            Query.from_(table)
-            .left_join(mtm_table)
-            .on(
-                mtm_table.field(mtm_field_a)
-                == table.field(self._table_map.name_to_data[table_data.tablename].pk)
-            )
-            .left_join(foreign_table)
-            .on(
-                mtm_table.field(mtm_field_b)
-                == foreign_table.field(foreign_table_data.pk)
             )
             .where(table.field(table_data.pk) == pk)
             .select(foreign_table.field(foreign_table_data.pk))

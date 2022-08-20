@@ -163,6 +163,8 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
     async def test_insert_and_find_orm(self) -> None:
         mocha = Flavor(name="mocha")
         vanilla = Flavor(name="vanilla")
+        await db[Flavor].insert(mocha)
+        await db[Flavor].insert(vanilla)
         coffee = Coffee(
             primary_flavor=mocha,
             secondary_flavor=vanilla,
@@ -172,7 +174,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
             ice=["cubes"],
             size=Vector3(),
         )
-        await db[Coffee].insert(coffee, depth=2)
+        await db[Coffee].insert(coffee)
         # Find record and compare.
         coffee_dict = coffee.dict()
         find_coffee = await db[Coffee].find_one(coffee.id, depth=1)
