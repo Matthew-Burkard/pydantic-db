@@ -1,20 +1,16 @@
-"""Module for building queries."""
-import json
-from typing import Any
-from uuid import UUID
+"""Module for building queries from models."""
 
-from pydantic import BaseModel
 from pypika import PostgreSQLQuery, Query, Table  # type: ignore
 from pypika.dialects import PostgreSQLQueryBuilder  # type: ignore
 from pypika.queries import QueryBuilder  # type: ignore
 
+import pydantic_db._util as util
 from pydantic_db._models import TableMap
 from pydantic_db._types import ModelType
-from pydantic_db._util import tablename_from_model_instance
 
 
-class PyDBQueryBuilder:
-    """Build SQL queries for model CRUD operations."""
+class ModelQueryBuilder:
+    """Build SQL queries from a model instance."""
 
     def __init__(
         self,
@@ -23,7 +19,7 @@ class PyDBQueryBuilder:
         processed_models: list[ModelType] | None = None,
         query: Query | PostgreSQLQuery | None = None,
     ) -> None:
-        """Build SQL queries for model CRUD operations.
+        """Build SQL queries for CRUD operations from a model.
 
         :param model: Model to build query for.
         :param table_map: Map of tablenames and models.
@@ -47,12 +43,6 @@ class PyDBQueryBuilder:
     def get_upsert_query(self) -> QueryBuilder | PostgreSQLQueryBuilder:
         """Get queries to upsert model tree."""
         return self._get_inserts_or_upserts(is_upsert=True)
-
-    def get_find_one_query(self, depth: int = 1) -> Query:
-        """pass"""
-
-    def get_find_many_query(self, depth: int = 1) -> Query:
-        """pass"""
 
     def get_update_queries(self) -> QueryBuilder | PostgreSQLQueryBuilder:
         """Get queries to update model tree."""
@@ -88,23 +78,6 @@ class PyDBQueryBuilder:
 
     def _get_columns_and_values(self):
         return {
-            column: self._py_type_to_sql(self._model.__dict__[column])
+            column: util.py_type_to_sql(self._table_map, self._model.__dict__[column])
             for column in self._table_data.columns
         }
-
-    def _py_type_to_sql(self, value: Any) -> Any:
-        if isinstance(value, UUID):
-            return str(value)
-        if isinstance(value, (dict, list)):
-            return json.dumps(value)
-        if (
-            isinstance(value, BaseModel)
-            and type(value) in self._table_map.model_to_data
-        ):
-            tablename = tablename_from_model_instance(value, self._table_map)
-            return self._py_type_to_sql(
-                value.__dict__[self._table_map.name_to_data[tablename].pk]
-            )
-        if isinstance(value, BaseModel):
-            return value.json()
-        return value

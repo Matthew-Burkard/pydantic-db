@@ -4,10 +4,8 @@ import json
 import re
 from types import NoneType
 from typing import Any, Generic, get_args, Type
-from uuid import UUID
 
 import pydantic
-from pydantic import BaseModel
 from pydantic.generics import GenericModel
 from pypika import Field, Order, Query, Table  # type: ignore
 from pypika.queries import QueryBuilder  # type: ignore
@@ -15,10 +13,11 @@ from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
+import pydantic_db._util as util
 from pydantic_db._models import PyDBTableMeta, Relationship, TableMap
-from pydantic_db._query_builder import PyDBQueryBuilder
 from pydantic_db._types import ModelType
-from pydantic_db._util import tablename_from_model
+from ._crud.field_query_builder import FieldQueryBuilder
+from ._crud.model_query_builder import ModelQueryBuilder
 
 
 class Result(GenericModel, Generic[ModelType]):
@@ -34,20 +33,20 @@ class TableManager(Generic[ModelType]):
 
     def __init__(
         self,
-        tablename: str,
-        engine: AsyncEngine,
+        table_data: PyDBTableMeta,
         table_map: TableMap,
+        engine: AsyncEngine,
     ) -> None:
         """Provides DB CRUD methods for a model type.
 
-        :param tablename: Name of the corresponding database table.
-        :param engine: A SQL Alchemy async engine.
+        :param table_data: Corresponding database table meta data.
         :param table_map: Map of tablenames and models.
+        :param engine: A SQL Alchemy async engine.
         """
-        self.tablename = tablename
         self._engine = engine
         self._table_map = table_map
-        self._field_to_column: dict[Any, str] = {}
+        self._table_data = table_data
+        self.tablename = table_data.tablename
 
     async def find_one(self, pk: Any, depth: int = 0) -> ModelType | None:
         """Get one record.
@@ -98,7 +97,7 @@ class TableManager(Generic[ModelType]):
         :return: Inserted model.
         """
         await self._execute_query(
-            PyDBQueryBuilder(model_instance, self._table_map).get_insert_query()
+            ModelQueryBuilder(model_instance, self._table_map).get_insert_query()
         )
         return model_instance
 
@@ -109,7 +108,7 @@ class TableManager(Generic[ModelType]):
         :return: The updated model.
         """
         await self._execute_query(
-            PyDBQueryBuilder(model_instance, self._table_map).get_update_queries()
+            ModelQueryBuilder(model_instance, self._table_map).get_update_queries()
         )
         return model_instance
 
@@ -121,17 +120,14 @@ class TableManager(Generic[ModelType]):
         :return: The inserted or updated model.
         """
         await self._execute_query(
-            PyDBQueryBuilder(model_instance, self._table_map).get_upsert_query()
+            ModelQueryBuilder(model_instance, self._table_map).get_upsert_query()
         )
         return model_instance
 
     async def delete(self, pk: Any) -> bool:
         """Delete a record."""
-        table = Table(self.tablename)
         await self._execute_query(
-            Query.from_(table)
-            .where(table.field(self._table_map.name_to_data[self.tablename].pk) == pk)
-            .delete()
+            FieldQueryBuilder(self._table_data).get_delete_query(pk)
         )
         return True
 
@@ -147,7 +143,7 @@ class TableManager(Generic[ModelType]):
             self._columns(table_data, depth),
         )
         query = query.where(
-            table.field(table_data.pk) == self._py_type_to_sql(pk)
+            table.field(table_data.pk) == util.py_type_to_sql(self._table_map, pk)
         ).select(*columns)
         result = await self._execute_query(query)
         try:
@@ -344,7 +340,7 @@ class TableManager(Generic[ModelType]):
         table_tree = table_tree or tablename
         py_type = {}
         table_data = self._table_map.name_to_data[
-            tablename_from_model(model_type, self._table_map)
+            util.tablename_from_model(model_type, self._table_map)
         ]
         for column, value in row_mapping.items():
             if not column.startswith(f"{table_tree}//"):
@@ -361,8 +357,8 @@ class TableManager(Generic[ModelType]):
                     table_data.relationships[column_name].foreign_table
                 ]
                 if depth <= 0:
-                    py_type[column_name] = self._sql_pk_to_py_pk_type(
-                        model_type, column_name, column, row_mapping
+                    py_type[column_name] = self._sql_type_to_py(
+                        model_type, column_name, row_mapping[column]
                     )
                 else:
                     py_type[column_name] = self._model_from_row_mapping(
@@ -380,46 +376,6 @@ class TableManager(Generic[ModelType]):
                 )
         return model_type.construct(**py_type)
 
-    def _tablename_from_model_instance(self, model: BaseModel) -> str:
-        # noinspection PyTypeHints
-        return [
-            k
-            for k, v in self._table_map.name_to_data.items()
-            if isinstance(model, v.model)
-        ][0]
-
-    def _py_type_to_sql(self, value: Any) -> Any:
-        if self._engine.name != "postgres" and isinstance(value, UUID):
-            return str(value)
-        if isinstance(value, (dict, list)):
-            return json.dumps(value)
-        if isinstance(value, BaseModel) and type(value) in [
-            it.model for it in self._table_map.name_to_data.values()
-        ]:
-            tablename = self._tablename_from_model_instance(value)
-            return self._py_type_to_sql(
-                value.__dict__[self._table_map.name_to_data[tablename].pk]
-            )
-        if isinstance(value, BaseModel):
-            return value.json()
-        return value
-
-    def _sql_pk_to_py_pk_type(
-        self,
-        model_type: Type[ModelType],
-        field_name: str,
-        column: str,
-        row_mapping: dict,
-    ) -> Any:
-        type_ = None
-        for arg in get_args(model_type.__fields__[field_name].type_):
-            if arg in self._table_map.name_to_data.values() or arg is NoneType:
-                continue
-            type_ = arg
-        if type_:
-            return type_(row_mapping[column])
-        return row_mapping[column]
-
     @staticmethod
     def _columns(table_data: PyDBTableMeta, depth: int) -> list[Field]:
         table = Table(table_data.tablename)
@@ -429,11 +385,19 @@ class TableManager(Generic[ModelType]):
         ]
 
     @staticmethod
-    def _sql_type_to_py(model: Type[ModelType], column: str, value: Any) -> Any:
+    def _sql_type_to_py(model_type: Type[ModelType], column: str, value: Any) -> Any:
         if value is None:
             return None
-        if model.__fields__[column].type_ in [dict, list]:
+        if model_type.__fields__[column].type_ in [dict, list]:
             return json.loads(value)
-        if issubclass(model.__fields__[column].type_, pydantic.BaseModel):
-            return model.__fields__[column].type_(**json.loads(value))
-        return model.__fields__[column].type_(value)
+        if get_args(model_type.__fields__[column].type_):
+            type_ = None
+            for arg in get_args(model_type.__fields__[column].type_):
+                if arg is NoneType:
+                    continue
+                type_ = arg
+            if type_:
+                return type_(value)
+        if issubclass(model_type.__fields__[column].type_, pydantic.BaseModel):
+            return model_type.__fields__[column].type_(**json.loads(value))
+        return model_type.__fields__[column].type_(value)
