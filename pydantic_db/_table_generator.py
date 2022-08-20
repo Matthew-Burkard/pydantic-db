@@ -77,14 +77,7 @@ class DBTableGenerator:
             return self._get_column_from_type_args(field_name, field, **kwargs)
         if origin:
             if origin == UnionType:
-                if (
-                    column := self._get_column_from_type_args(
-                        field_name, field, **kwargs
-                    )
-                ) is not None:
-                    return column
-                else:
-                    raise TypeConversionError(field.type_)
+                return self._get_column_from_type_args(field_name, field, **kwargs)
             else:
                 raise TypeConversionError(field.type_)
         if get_origin(field.outer_type_) == dict:
