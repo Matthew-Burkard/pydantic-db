@@ -6,13 +6,15 @@ import unittest
 from typing import Callable
 from uuid import UUID, uuid4
 
+import pytest
 from pydantic import BaseModel, Field
 from sqlalchemy import MetaData
 
 from pydantic_db.errors import (
     MismatchingBackReferenceError,
     MustUnionForeignKeyError,
-    TypeConversionError, UndefinedBackReferenceError,
+    TypeConversionError,
+    UndefinedBackReferenceError,
 )
 from pydantic_db.pydb import PyDB
 
@@ -106,42 +108,51 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         asyncio.run(_init(muf_wrong_pk_type_db))
         asyncio.run(_init(type_conversion_error_db))
 
-    async def test_undefined_back_reference(self) -> None:
-        correct_error = False
-        try:
+    @staticmethod
+    async def test_undefined_back_reference() -> None:
+        with pytest.raises(UndefinedBackReferenceError) as e:
             await ubr_db.init()
-        except UndefinedBackReferenceError:
-            correct_error = True
-        self.assertTrue(correct_error)
+        assert e.value.args[0] == (
+            'Many relation defined on "undefined_backreference.self_ref" to table '
+            'undefined_backreference" must be "back-referenced from table '
+            '"undefined_backreference"'
+        )
 
-    async def test_mismatched_back_reference(self) -> None:
-        correct_error = False
-        try:
+    @staticmethod
+    async def test_mismatched_back_reference() -> None:
+        with pytest.raises(MismatchingBackReferenceError) as e:
             await mbr_db.init()
-        except MismatchingBackReferenceError:
-            correct_error = True
-        self.assertTrue(correct_error)
+        assert (
+            e.value.args[0]
+            == 'Many relation defined on "mismatched_backreference_a.other" to'
+            ' mismatched_backreference_b.other" must use the same model type'
+            ' back-referenced from table "mismatched_backreference_a"'
+        )
 
-    async def test_missing_foreign_key_union(self) -> None:
-        correct_error = False
-        try:
+    @staticmethod
+    async def test_missing_foreign_key_union() -> None:
+        with pytest.raises(MustUnionForeignKeyError) as e:
             await muf_missing_union_db.init()
-        except MustUnionForeignKeyError:
-            correct_error = True
-        self.assertTrue(correct_error)
+        assert (
+            e.value.args[0]
+            == 'Relation defined on "b.a" to "a" must be a union type of "Model |'
+            ' model_pk_type" e.g. "A | UUID"'
+        )
 
-    async def test_missing_wrong_pk_type(self) -> None:
-        correct_error = False
-        try:
+    @staticmethod
+    async def test_missing_wrong_pk_type() -> None:
+        with pytest.raises(MustUnionForeignKeyError) as e:
             await muf_wrong_pk_type_db.init()
-        except MustUnionForeignKeyError:
-            correct_error = True
-        self.assertTrue(correct_error)
+        assert (
+            e.value.args[0]
+            == 'Relation defined on "f.e" to "e" must be a union type of "Model |'
+            ' model_pk_type" e.g. "E | UUID"'
+        )
 
-    async def test_conversion_type_error(self) -> None:
-        correct_error = False
-        try:
+    @staticmethod
+    async def test_conversion_type_error() -> None:
+        with pytest.raises(TypeConversionError) as e:
             await type_conversion_error_db.init()
-        except TypeConversionError:
-            correct_error = True
-        self.assertTrue(correct_error)
+        assert (
+            e.value.args[0] == "Failed to convert type typing.Callable[[], int] to SQL."
+        )
