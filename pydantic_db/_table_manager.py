@@ -1,5 +1,4 @@
 """Handle table interactions for a model."""
-import asyncio
 import json
 import re
 from types import NoneType
@@ -14,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
 import pydantic_db._util as util
-from pydantic_db._models import PyDBTableMeta, Relationship, TableMap
+from pydantic_db._models import PyDBTableMeta, TableMap
 from pydantic_db._types import ModelType
 from ._crud.field_query_builder import FieldQueryBuilder
 from ._crud.model_query_builder import ModelQueryBuilder
@@ -55,7 +54,17 @@ class TableManager(Generic[ModelType]):
         :param depth: ORM fetch depth.
         :return: A model representing the record if it exists else None.
         """
-        return await self._find_one(self.tablename, pk, depth)
+        result = await self._execute_query(
+            FieldQueryBuilder(self._table_data, self._table_map).get_find_one_query(
+                pk, depth
+            )
+        )
+        try:
+            # noinspection PyProtectedMember
+            model_instance = self._model_from_row_mapping(next(result)._mapping)
+            return model_instance
+        except StopIteration:
+            return None
 
     async def find_many(
         self,
@@ -76,10 +85,11 @@ class TableManager(Generic[ModelType]):
         :param depth: Depth of relations to populate.
         :return: A list of models representing table records.
         """
-        query = self._get_find_many_query(
-            self.tablename, where, order_by, order, limit, offset, depth
+        result = await self._execute_query(
+            FieldQueryBuilder(self._table_data, self._table_map).get_find_many_query(
+                where, order_by, order, limit, offset, depth
+            )
         )
-        result = await self._execute_query(query)
         # noinspection PyProtectedMember
         return Result(
             offset=offset,
@@ -124,146 +134,14 @@ class TableManager(Generic[ModelType]):
         )
         return model_instance
 
-    async def delete(self, pk: Any) -> bool:
-        """Delete a record."""
+    async def delete(self, pk: Any) -> None:
+        """Delete a record.
+
+        :param pk: Primary key of the record to delete.
+        """
         await self._execute_query(
             FieldQueryBuilder(self._table_data).get_delete_query(pk)
         )
-        return True
-
-    async def _find_one(
-        self, tablename: str, pk: Any, depth: int = 0
-    ) -> ModelType | None:
-        table_data = self._table_map.name_to_data[tablename]
-        table = Table(tablename)
-        query, columns = self._build_joins(
-            Query.from_(table),
-            table_data,
-            depth,
-            self._columns(table_data, depth),
-        )
-        query = query.where(
-            table.field(table_data.pk) == util.py_type_to_sql(self._table_map, pk)
-        ).select(*columns)
-        result = await self._execute_query(query)
-        try:
-            # noinspection PyProtectedMember
-            model_instance = self._model_from_row_mapping(
-                next(result)._mapping, tablename=tablename
-            )
-            model_instance = await self._populate_many_relations(
-                table_data, model_instance, depth
-            )
-            return model_instance
-        except StopIteration:
-            return None
-
-    async def _populate_many_relations(
-        self, table_data: PyDBTableMeta, model_instance: ModelType, depth: int
-    ) -> ModelType:
-        if depth <= 0:
-            return model_instance
-        depth -= 1
-        for column, relation in table_data.relationships.items():
-            if not relation.back_references:
-                continue
-            pk = model_instance.__dict__[table_data.pk]
-            models = await self._find_many_relation(table_data, pk, relation, depth)
-            models = await asyncio.gather(
-                *[
-                    self._populate_many_relations(
-                        self._table_map.name_to_data[relation.foreign_table],
-                        model,
-                        depth,
-                    )
-                    for model in models
-                ]
-            )
-            model_instance.__setattr__(column, models)
-        # If depth is exhausted back out to here to skip needless loops.
-        if depth <= 0:
-            return model_instance
-        # For each field, populate the many relationships of that field.
-        for tablename, data in self._table_map.name_to_data.items():
-            for column in table_data.model.__fields__:
-                if type(model := model_instance.__dict__.get(column)) == data.model:
-                    model = await self._populate_many_relations(data, model, depth)
-                    model_instance.__setattr__(column, model)
-        return model_instance
-
-    async def _find_many_relation(
-        self, table_data: PyDBTableMeta, pk: Any, relation: Relationship, depth: int
-    ) -> list[ModelType] | None:
-        table = Table(table_data.tablename)
-        foreign_table = Table(relation.foreign_table)
-        foreign_table_data = self._table_map.name_to_data[relation.foreign_table]
-        many_result = await self._find_otm(
-            table_data, foreign_table_data, relation, table, foreign_table, pk, depth
-        )
-        # noinspection PyProtectedMember
-        return [
-            self._model_from_row_mapping(
-                row._mapping, tablename=foreign_table_data.tablename
-            )
-            for row in many_result
-        ]
-
-    async def _find_otm(
-        self,
-        table_data: PyDBTableMeta,
-        foreign_table_data: PyDBTableMeta,
-        relation: Relationship,
-        table: Table,
-        foreign_table: Table,
-        pk: Any,
-        depth: int,
-    ) -> Any:
-        query = (
-            Query.from_(table)
-            .left_join(foreign_table)
-            .on(
-                foreign_table.field(relation.back_references)
-                == table.field(table_data.pk)
-            )
-            .where(table.field(table_data.pk) == pk)
-            .select(foreign_table.field(foreign_table_data.pk))
-        )
-        result = await self._execute_query(query)
-        many_query = self._get_find_many_query(
-            foreign_table_data.tablename, depth=depth
-        ).where(
-            foreign_table.field(foreign_table_data.pk).isin([it[0] for it in result])
-        )
-        return await self._execute_query(many_query)
-
-    def _get_find_many_query(
-        self,
-        tablename: str,
-        where: dict[str, Any] | None = None,
-        order_by: list[str] | None = None,
-        order: Order = Order.asc,
-        limit: int = 0,
-        offset: int = 0,
-        depth: int = 0,
-    ) -> QueryBuilder:
-        table = Table(tablename)
-        where = where or {}
-        order_by = order_by or []
-        pydb_table = self._table_map.name_to_data[tablename]
-        query, columns = self._build_joins(
-            Query.from_(table),
-            pydb_table,
-            depth,
-            self._columns(pydb_table, depth),
-        )
-        for field, value in where.items():
-            query = query.where(table.field(field) == value)
-        query = query.orderby(*order_by, order=order).select(*columns)
-        if limit:
-            query = query.limit(limit)
-        if offset:
-            query = query.offset(offset)
-        return query
 
     async def _execute_query(self, query: QueryBuilder) -> Any:
         async_session = sessionmaker(
@@ -275,58 +153,6 @@ class TableManager(Generic[ModelType]):
             await session.commit()
         await self._engine.dispose()
         return result
-
-    def _build_joins(
-        self,
-        query: QueryBuilder,
-        table_data: PyDBTableMeta,
-        depth: int,
-        columns: list[Field],
-        table_tree: str | None = None,
-    ) -> tuple[QueryBuilder, list[Field]]:
-        if depth <= 0:
-            return query, columns
-        if not (
-            relationships := self._table_map.name_to_data[
-                table_data.tablename
-            ].relationships
-        ):
-            return query, columns
-        depth -= 1
-        table_tree = table_tree or table_data.tablename
-        pypika_table: Table = Table(table_data.tablename)
-        if table_data.tablename != table_tree:
-            pypika_table = pypika_table.as_(table_tree)
-        # For each related table, add join to query.
-        for field_name, relation in relationships.items():
-            if relation.back_references is not None:
-                continue
-            relation_name = f"{table_tree}/{field_name}"
-            rel_table = Table(relation.foreign_table).as_(relation_name)
-            query = query.left_join(rel_table).on(
-                pypika_table.field(field_name)
-                == rel_table.field(
-                    self._table_map.name_to_data[relation.foreign_table].pk
-                )
-            )
-            columns.extend(
-                [
-                    rel_table.field(c).as_(f"{relation_name}//{depth}//{c}")
-                    for c in self._table_map.name_to_data[
-                        relation.foreign_table
-                    ].columns
-                ]
-            )
-            # Add joins of relations of this table to query.
-            query, new_cols = self._build_joins(
-                query,
-                self._table_map.name_to_data[relation.foreign_table],
-                depth,
-                columns,
-                relation_name,
-            )
-            columns.extend([c for c in new_cols if c not in columns])
-        return query, columns
 
     def _model_from_row_mapping(
         self,
@@ -375,14 +201,6 @@ class TableManager(Generic[ModelType]):
                     model_type, column_name, value
                 )
         return model_type.construct(**py_type)
-
-    @staticmethod
-    def _columns(table_data: PyDBTableMeta, depth: int) -> list[Field]:
-        table = Table(table_data.tablename)
-        return [
-            table.field(c).as_(f"{table_data.tablename}//{depth}//{c}")
-            for c in table_data.columns
-        ]
 
     @staticmethod
     def _sql_type_to_py(model_type: Type[ModelType], column: str, value: Any) -> Any:
