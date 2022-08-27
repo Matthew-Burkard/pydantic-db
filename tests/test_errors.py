@@ -125,8 +125,8 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         assert (
             e.value.args[0]
             == 'Many relation defined on "mismatched_backreference_a.other" to'
-            ' mismatched_backreference_b.other" must use the same model type'
-            ' back-referenced from table "mismatched_backreference_a"'
+            ' "mismatched_backreference_b.other" must use the same model type'
+            ' back-referenced.'
         )
 
     @staticmethod
