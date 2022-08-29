@@ -46,6 +46,7 @@ class TableManager(Generic[ModelType]):
         self._table_map = table_map
         self._table_data = table_data
         self.tablename = table_data.tablename
+        self.columns = table_data.columns
 
     async def find_one(self, pk: Any, depth: int = 0) -> ModelType | None:
         """Get one record.
