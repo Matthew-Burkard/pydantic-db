@@ -1,10 +1,6 @@
 """Handle table interactions for a model."""
-import json
-import re
-from types import NoneType
-from typing import Any, Generic, get_args, Type
+from typing import Any, Generic
 
-import pydantic
 from pydantic.generics import GenericModel
 from pypika import Field, Order, Query, Table  # type: ignore
 from pypika.queries import QueryBuilder  # type: ignore
@@ -12,11 +8,11 @@ from sqlalchemy import text  # type: ignore
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
 from sqlalchemy.orm import sessionmaker  # type: ignore
 
-import pydantic_db._util as util
 from pydantic_db._models import PyDBTableMeta, TableMap
 from pydantic_db._types import ModelType
 from ._crud.field_query_builder import FieldQueryBuilder
 from ._crud.model_query_builder import ModelQueryBuilder
+from ._crud.result_deserializer import ResultSetDeserializer
 
 
 class Result(GenericModel, Generic[ModelType]):
@@ -60,12 +56,13 @@ class TableManager(Generic[ModelType]):
                 pk, depth
             )
         )
-        try:
-            # noinspection PyProtectedMember
-            model_instance = self._model_from_row_mapping(next(result)._mapping)
-            return model_instance
-        except StopIteration:
-            return None
+        return ResultSetDeserializer[ModelType | None](
+            table_data=self._table_data,
+            table_map=self._table_map,
+            result_set=result,
+            is_array=False,
+            depth=depth,
+        ).deserialize()
 
     async def find_many(
         self,
@@ -91,11 +88,18 @@ class TableManager(Generic[ModelType]):
                 where, order_by, order, limit, offset, depth
             )
         )
+        deserialized_data = ResultSetDeserializer[ModelType | None](
+            table_data=self._table_data,
+            table_map=self._table_map,
+            result_set=result,
+            is_array=False,
+            depth=depth,
+        ).deserialize()
         # noinspection PyProtectedMember
         return Result(
             offset=offset,
             limit=limit,
-            data=[self._model_from_row_mapping(row._mapping) for row in result],
+            data=deserialized_data,
         )
 
     async def insert(self, model_instance: ModelType) -> ModelType:
@@ -141,7 +145,7 @@ class TableManager(Generic[ModelType]):
         :param pk: Primary key of the record to delete.
         """
         await self._execute_query(
-            FieldQueryBuilder(self._table_data).get_delete_query(pk)
+            FieldQueryBuilder(self._table_data, self._table_map).get_delete_query(pk)
         )
 
     async def _execute_query(self, query: QueryBuilder) -> Any:
@@ -154,69 +158,3 @@ class TableManager(Generic[ModelType]):
             await session.commit()
         await self._engine.dispose()
         return result
-
-    def _model_from_row_mapping(
-        self,
-        row_mapping: dict[str, Any],
-        model_type: Type[ModelType] | None = None,
-        table_tree: str | None = None,
-        tablename: str | None = None,
-    ) -> ModelType:
-        tablename = tablename or self.tablename
-        model_type = model_type or self._table_map.name_to_data[tablename].model
-        table_tree = table_tree or tablename
-        py_type = {}
-        table_data = self._table_map.name_to_data[
-            util.tablename_from_model(model_type, self._table_map)
-        ]
-        for column, value in row_mapping.items():
-            if not column.startswith(f"{table_tree}//"):
-                # This must be a column somewhere else in the tree.
-                continue
-            groups = re.match(rf"{re.escape(table_tree)}//(\d+)//(.*)", column)
-            depth = int(groups.group(1))
-            column_name = groups.group(2)
-            if column_name in table_data.relationships:
-                if value is None:
-                    # No further depth has been found.
-                    continue
-                foreign_table = self._table_map.name_to_data[
-                    table_data.relationships[column_name].foreign_table
-                ]
-                if depth <= 0:
-                    py_type[column_name] = self._sql_type_to_py(
-                        model_type, column_name, row_mapping[column]
-                    )
-                else:
-                    py_type[column_name] = self._model_from_row_mapping(
-                        row_mapping={
-                            k.removeprefix(f"{table_tree}/"): v
-                            for k, v in row_mapping.items()
-                            if not k.startswith(f"{table_tree}//")
-                        },
-                        model_type=foreign_table.model,
-                        table_tree=column_name,
-                    )
-            else:
-                py_type[column_name] = self._sql_type_to_py(
-                    model_type, column_name, value
-                )
-        return model_type.construct(**py_type)
-
-    @staticmethod
-    def _sql_type_to_py(model_type: Type[ModelType], column: str, value: Any) -> Any:
-        if value is None:
-            return None
-        if model_type.__fields__[column].type_ in [dict, list]:
-            return json.loads(value)
-        if get_args(model_type.__fields__[column].type_):
-            type_ = None
-            for arg in get_args(model_type.__fields__[column].type_):
-                if arg is NoneType:
-                    continue
-                type_ = arg
-            if type_:
-                return type_(value)
-        if issubclass(model_type.__fields__[column].type_, pydantic.BaseModel):
-            return model_type.__fields__[column].type_(**json.loads(value))
-        return model_type.__fields__[column].type_(value)

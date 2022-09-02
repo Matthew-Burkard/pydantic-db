@@ -11,9 +11,7 @@ from pydantic_db._models import PyDBTableMeta, TableMap
 class FieldQueryBuilder:
     """Build SQL queries from field information."""
 
-    def __init__(
-        self, table_data: PyDBTableMeta, table_map: TableMap | None = None
-    ) -> None:
+    def __init__(self, table_data: PyDBTableMeta, table_map: TableMap) -> None:
         """Build CRUD queries from tablename and field info.
 
         :param table_data: Meta data of target table for SQL script.
@@ -30,7 +28,7 @@ class FieldQueryBuilder:
             Query.from_(self._table),
             self._table_data,
             depth,
-            self._columns(self._table_data, depth),
+            self._columns(depth),
         )
         query = query.where(
             self._table.field(self._table_data.pk)
@@ -63,7 +61,7 @@ class FieldQueryBuilder:
             Query.from_(self._table),
             self._table_data,
             depth,
-            self._columns(self._table_data, depth),
+            self._columns(depth),
         )
         for field, value in where.items():
             query = query.where(self._table.field(field) == value)
@@ -107,18 +105,32 @@ class FieldQueryBuilder:
         for field_name, relation in relationships.items():
             relation_name = f"{table_tree}/{field_name}"
             rel_table = Table(relation.foreign_table).as_(relation_name)
-            query = query.left_join(rel_table).on(
-                pypika_table.field(field_name)
-                == rel_table.field(
-                    self._table_map.name_to_data[relation.foreign_table].pk
+            if relation.back_references is not None:
+                query = query.left_join(rel_table).on(
+                    pypika_table.field(table_data.pk)
+                    == rel_table.field(relation.back_references)
                 )
-            )
+            else:
+                query = query.left_join(rel_table).on(
+                    pypika_table.field(field_name)
+                    == rel_table.field(
+                        self._table_map.name_to_data[relation.foreign_table].pk
+                    )
+                )
+            # Add columns of rel table to this query.
             columns.extend(
                 [
-                    rel_table.field(c).as_(f"{relation_name}//{depth}//{c}")
+                    rel_table.field(c).as_(f"{relation_name}\\{c}")
                     for c in self._table_map.name_to_data[
                         relation.foreign_table
                     ].columns
+                    if not (
+                        depth > 0
+                        and c
+                        in self._table_map.name_to_data[
+                            relation.foreign_table
+                        ].relationships
+                    )
                 ]
             )
             # Add joins of relations of this table to query.
@@ -132,10 +144,10 @@ class FieldQueryBuilder:
             columns.extend([c for c in new_cols if c not in columns])
         return query, columns
 
-    @staticmethod
-    def _columns(table_data: PyDBTableMeta, depth: int) -> list[Field]:
-        table = Table(table_data.tablename)
+    def _columns(self, depth: int) -> list[Field]:
+        table = Table(self._table_data.tablename)
         return [
-            table.field(c).as_(f"{table_data.tablename}//{depth}//{c}")
-            for c in table_data.columns
+            table.field(c).as_(f"{self._table_data.tablename}\\{c}")
+            for c in self._table_data.columns
+            if not (depth > 0 and c in self._table_data.relationships)
         ]
