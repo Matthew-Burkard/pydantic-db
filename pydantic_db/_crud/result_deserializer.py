@@ -1,7 +1,9 @@
 """Deserialize a result set into Python models."""
 from __future__ import annotations
 
-from typing import Any, Generic, TypeVar
+import json
+from types import NoneType
+from typing import Any, Generic, get_args, Type, TypeVar
 
 from pydantic import BaseModel, Field
 from sqlalchemy.engine import CursorResult, Row  # type: ignore
@@ -99,31 +101,35 @@ class ResultSetDeserializer(Generic[DeserializedType]):
                     if column:
                         node[column] = row[column_idx]
 
+        if not self._return_dict:
+            return None
         if self._result_schema.is_array:
             return [
                 self._table_data.model(**record)
-                for record in self._flatten_result(
-                    self._return_dict, self._result_schema
-                )[self._table_data.tablename]
+                for record in self._prep_result(self._return_dict, self._result_schema)[
+                    self._table_data.tablename
+                ]
             ]
         return self._table_data.model(
-            **self._flatten_result(self._return_dict, self._result_schema)[
+            **self._prep_result(self._return_dict, self._result_schema)[
                 self._table_data.tablename
             ]
         )
 
-    def _flatten_result(
+    def _prep_result(
         self, node: dict[Any, Any], schema: ResultSchema
     ) -> dict[str, Any] | None:
         for key, val in node.items():
+            if td := schema.table_data:
+                node[key] = self._sql_type_to_py(td.model, key, val)
             if key in schema.references:
                 ref_schema = schema.references[key]
                 if ref_schema.is_array:
                     node[key] = [
-                        self._flatten_result(v, ref_schema) for v in node[key].values()
+                        self._prep_result(v, ref_schema) for v in node[key].values()
                     ]
                 else:
-                    node[key] = self._flatten_result(node[key], ref_schema)
+                    node[key] = self._prep_result(node[key], ref_schema)
         return node
 
     def _get_result_schema(
@@ -151,3 +157,26 @@ class ResultSetDeserializer(Generic[DeserializedType]):
             },
         )
         return result_schema
+
+    @staticmethod
+    def _sql_type_to_py(model_type: Type[ModelType], column: str, value: Any) -> Any:
+        if model_type.__fields__[column].type_ == dict:
+            return {} if value is None else json.loads(value)
+        if model_type.__fields__[column].type_ == list:
+            return [] if value is None else json.loads(value)
+        if value is None:
+            return None
+        if get_args(model_type.__fields__[column].type_):
+            for arg in get_args(model_type.__fields__[column].type_):
+                if arg is NoneType:
+                    continue
+                try:
+                    return arg(value)
+                except (AttributeError, TypeError):
+                    continue
+        try:
+            if issubclass(model_type.__fields__[column].type_, BaseModel):
+                return json.loads(value)
+        except TypeError:
+            return value
+        return value
