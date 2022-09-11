@@ -19,7 +19,6 @@ class One(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     many_a: list[Many] = Field(default_factory=lambda: [])
     many_b: list[Many] | None = None
-    attribute: str | None = None
 
 
 @db.table(pk="id")
@@ -65,11 +64,12 @@ class PyDBManyRelationsTests(unittest.IsolatedAsyncioTestCase):
         many_a_plus_b.sort(key=lambda x: x.id)
         find_one_a.many_a.sort(key=lambda x: x.id)
         self.assertListEqual(many_a_plus_b, find_one_a.many_a)
-        self.assertListEqual([], find_one_a.many_b)
+        self.assertIsNone(find_one_a.many_b)
         find_one_b = await db[One].find_one(one_b.id, depth=2)
         many_b.sort(key=lambda x: x.id)
         find_one_b.many_b.sort(key=lambda x: x.id)
         self.assertListEqual(many_b, find_one_b.many_b)
         self.assertListEqual([], find_one_b.many_a)
         many_a_idx_zero = await db[Many].find_one(many_a[0].id, depth=3)
+        many_a_idx_zero.one_a.many_a.sort(key=lambda x: x.id)
         self.assertDictEqual(find_one_a.dict(), many_a_idx_zero.one_a.dict())
