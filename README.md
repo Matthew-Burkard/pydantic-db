@@ -6,17 +6,16 @@ tables.
 ## Getting started
 
 Pydantic DB uses SQL Alchemy tp run queries.
-To start, create a SQL Alchemy async engine and pass it to a `PyDB` object.
+To start, create a SQL Alchemy connection string and pass it to a `PyDB` object.
 
 ```python
-from sqlalchemy.ext.asyncio import create_async_engine
 from pydantic_db.pydb import PyDB
 
-engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
-db = PyDB(engine)
+db = PyDB("sqlite+aiosqlite:///db.sqlite3")
 ```
 
-To create tables decorate a pydantic model with the `db.table` decorator, passing db info to the decorator call.
+To create tables decorate a pydantic model with the `db.table` decorator, passing db
+info to the decorator call.
 
 ```python
 @db.table(pk="id", indexed=["name"])
@@ -27,6 +26,12 @@ class Flavor(BaseModel):
     name: str = Field(max_length=63)
 ```
 
+## Table Restrictions
+
+- Tables must have a single column primary key.
+- The primary key column must be the first column.
+- Relationships must union-type the foreign model and that models primary key.
+
 ## Full Example
 
 ```python
@@ -35,12 +40,10 @@ import asyncio
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.pydb import PyDB
 
-engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
-db = PyDB(engine)
+db = PyDB("sqlite+aiosqlite:///db.sqlite3")
 
 
 @db.table(pk="id", indexed=["name"])
@@ -58,7 +61,7 @@ class Coffee(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     sweetener: str | None = Field(max_length=63)
     sweetener_count: int | None = None
-    flavor: Flavor
+    flavor: Flavor | UUID
 
 
 async def demo() -> None:
