@@ -6,7 +6,7 @@ from types import NoneType
 from typing import Any, Generic, get_args, Type, TypeVar
 
 from pydantic import BaseModel, Field
-from sqlalchemy.engine import CursorResult, Row  # type: ignore
+from sqlalchemy.engine import CursorResult
 
 from pydantic_db._models import PyDBTableMeta, TableMap
 from pydantic_db._types import ModelType
@@ -20,7 +20,6 @@ class ResultSchema(BaseModel):
     table_data: PyDBTableMeta | None = None
     is_array: bool
     references: dict[str, ResultSchema] = Field(default_factory=lambda: {})
-    models: list[ModelType] = Field(default_factory=lambda: [])
 
 
 class ResultSetDeserializer(Generic[DeserializedType]):
@@ -75,7 +74,7 @@ class ResultSetDeserializer(Generic[DeserializedType]):
                     schema = schema.references[branch]
                     # Update last pk if this column is a pk.
                     if (
-                        column == schema.table_data.pk
+                        column == schema.table_data.pk  # type: ignore
                         and current_tree == f"/{column_tree}"
                     ):
                         row_schema[current_tree] = row[column_idx]
@@ -102,9 +101,9 @@ class ResultSetDeserializer(Generic[DeserializedType]):
                         node[column] = row[column_idx]
 
         if not self._return_dict:
-            return None
+            return None  # type: ignore
         if self._result_schema.is_array:
-            return [
+            return [  # type: ignore
                 self._table_data.model(**record)
                 for record in self._prep_result(self._return_dict, self._result_schema)[
                     self._table_data.tablename
@@ -118,7 +117,7 @@ class ResultSetDeserializer(Generic[DeserializedType]):
 
     def _prep_result(
         self, node: dict[Any, Any], schema: ResultSchema
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, Any]:
         for key, val in node.items():
             if td := schema.table_data:
                 node[key] = self._sql_type_to_py(td.model, key, val)

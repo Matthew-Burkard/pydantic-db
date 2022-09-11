@@ -2,11 +2,11 @@
 from typing import Any, Generic
 
 from pydantic.generics import GenericModel
-from pypika import Field, Order, Query, Table  # type: ignore
-from pypika.queries import QueryBuilder  # type: ignore
-from sqlalchemy import text  # type: ignore
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession  # type: ignore
-from sqlalchemy.orm import sessionmaker  # type: ignore
+from pypika import Order
+from pypika.queries import QueryBuilder
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 
 from pydantic_db._models import PyDBTableMeta, TableMap
 from pydantic_db._types import ModelType
@@ -32,9 +32,9 @@ class TableManager(Generic[ModelType]):
         table_map: TableMap,
         engine: AsyncEngine,
     ) -> None:
-        """Provides DB CRUD methods for a model type.
+        """Manage DB info and CRUD methods for a model type.
 
-        :param table_data: Corresponding database table meta data.
+        :param table_data: Corresponding database table metadata.
         :param table_map: Map of tablenames and models.
         :param engine: A SQL Alchemy async engine.
         """

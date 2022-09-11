@@ -178,11 +178,7 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         # Find record and compare.
         coffee_dict = coffee.dict()
         find_coffee = await db[Coffee].find_one(coffee.id, depth=1)
-        self.assertDictEqual(
-            coffee_dict, find_coffee.dict()
-        )
+        self.assertDictEqual(coffee_dict, find_coffee.dict())
         coffee_dict["primary_flavor"] = coffee_dict["primary_flavor"]["id"]
         coffee_dict["secondary_flavor"] = coffee_dict["secondary_flavor"]["id"]
-        self.assertDictEqual(
-            coffee_dict, (await db[Coffee].find_one(coffee.id)).dict()
-        )
+        self.assertDictEqual(coffee_dict, (await db[Coffee].find_one(coffee.id)).dict())

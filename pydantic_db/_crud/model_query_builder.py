@@ -1,8 +1,9 @@
 """Module for building queries from models."""
+from typing import Any
 
-from pypika import PostgreSQLQuery, Query, Table  # type: ignore
-from pypika.dialects import PostgreSQLQueryBuilder  # type: ignore
-from pypika.queries import QueryBuilder  # type: ignore
+from pypika import PostgreSQLQuery, Query, Table
+from pypika.dialects import PostgreSQLQueryBuilder
+from pypika.queries import QueryBuilder
 
 import pydantic_db._util as util
 from pydantic_db._models import TableMap
@@ -55,9 +56,6 @@ class ModelQueryBuilder:
         )
         return self._query
 
-    def get_patch_queries(self) -> list[QueryBuilder | PostgreSQLQueryBuilder]:
-        """pass"""
-
     def _get_inserts_or_upserts(
         self, is_upsert: bool
     ) -> QueryBuilder | PostgreSQLQueryBuilder:
@@ -76,7 +74,7 @@ class ModelQueryBuilder:
                     )
         return self._query
 
-    def _get_columns_and_values(self):
+    def _get_columns_and_values(self) -> dict[str, Any]:
         return {
             column: util.py_type_to_sql(self._table_map, self._model.__dict__[column])
             for column in self._table_data.columns

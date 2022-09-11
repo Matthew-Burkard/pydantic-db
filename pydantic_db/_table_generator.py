@@ -30,6 +30,12 @@ class DBTableGenerator:
     def __init__(
         self, engine: AsyncEngine, metadata: MetaData, table_map: TableMap
     ) -> None:
+        """Init DBTableGenerator.
+
+        :param engine: SQL Alchemy async engine for creating tables.
+        :param metadata: SQL Alchemy metadata.
+        :param table_map: Map of tablenames and models.
+        """
         self._engine = engine
         self._metadata = metadata
         self._table_map = table_map
@@ -71,7 +77,7 @@ class DBTableGenerator:
         return tuple(columns)
 
     def _get_column(
-        self, field_name: str, field: ModelField, **kwargs
+        self, field_name: str, field: ModelField, **kwargs: Any
     ) -> Column | None:
         outer_origin = get_origin(field.outer_type_)
         origin = get_origin(field.type_)
@@ -101,7 +107,7 @@ class DBTableGenerator:
         return Column(field_name, JSON, **kwargs)
 
     def _get_column_from_type_args(
-        self, field_name: str, field: ModelField, **kwargs
+        self, field_name: str, field: ModelField, **kwargs: Any
     ) -> Column | None:
         for arg in get_args(field.type_):
             if arg in [it.model for it in self._table_map.name_to_data.values()]:

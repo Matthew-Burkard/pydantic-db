@@ -4,8 +4,8 @@ from typing import Callable, ForwardRef, get_args, get_origin, Type
 
 import caseswitcher
 from pydantic.fields import ModelField
-from sqlalchemy import MetaData  # type: ignore
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine  # type: ignore
+from sqlalchemy import MetaData
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db._models import (
     PyDBTableMeta,
@@ -37,6 +37,11 @@ class PyDB:
         self._table_map: TableMap = TableMap()
 
     def __getitem__(self, item: Type[ModelType]) -> TableManager[ModelType]:
+        """Get a `TableManager` for the given pydantic model.
+
+        :param item: Pydantic model.
+        :return: A `TableManager` for the given pydantic model.
+        """
         return self._crud_generators[item]
 
     def table(
