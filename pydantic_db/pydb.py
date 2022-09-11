@@ -101,7 +101,7 @@ class PyDB:
             )
         await DBTableGenerator(self._engine, self._metadata, self._table_map).init()
         async with self._engine.begin() as conn:
-            await conn.run_sync(self._metadata.drop_all)
+            await conn.run_sync(self._metadata.create_all)
 
     def _get_relationships(self, table_data: PyDBTableMeta) -> dict[str, Relationship]:
         relationships = {}

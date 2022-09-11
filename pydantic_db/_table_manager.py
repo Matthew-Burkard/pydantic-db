@@ -99,7 +99,7 @@ class TableManager(Generic[ModelType]):
         return Result(
             offset=offset,
             limit=limit,
-            data=deserialized_data,
+            data=deserialized_data or [],
         )
 
     async def insert(self, model_instance: ModelType) -> ModelType:
