@@ -8,12 +8,11 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 from pypika import Order
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from pydantic_db.pydb import PyDB
 
-engine = create_async_engine("sqlite+aiosqlite:///db.sqlite3")
-db = PyDB(engine)
+connection_str = "sqlite+aiosqlite:///db.sqlite3"
+db = PyDB(connection_str)
 
 
 class Vector3(BaseModel):
@@ -45,7 +44,7 @@ class Coffee(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     primary_flavor: Flavor | UUID
-    secondary_flavor: Flavor | UUID
+    secondary_flavor: Flavor | UUID | None
     sweetener: str
     cream: float
     place: dict
@@ -69,10 +68,10 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         """Setup clean sqlite database."""
 
         async def _init() -> None:
-            await db.init()
-            async with engine.begin() as conn:
-                await conn.run_sync(db.metadata.drop_all)
-                await conn.run_sync(db.metadata.create_all)
+            async with db._engine.begin() as conn:
+                await db.init()
+                await conn.run_sync(db._metadata.drop_all)
+                await conn.run_sync(db._metadata.create_all)
 
         asyncio.run(_init())
 
@@ -164,6 +163,8 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
     async def test_insert_and_find_orm(self) -> None:
         mocha = Flavor(name="mocha")
         vanilla = Flavor(name="vanilla")
+        await db[Flavor].insert(mocha)
+        await db[Flavor].insert(vanilla)
         coffee = Coffee(
             primary_flavor=mocha,
             secondary_flavor=vanilla,
@@ -176,11 +177,8 @@ class PyDBTests(unittest.IsolatedAsyncioTestCase):
         await db[Coffee].insert(coffee)
         # Find record and compare.
         coffee_dict = coffee.dict()
-        self.assertDictEqual(
-            coffee_dict, (await db[Coffee].find_one(coffee.id, depth=1)).dict()
-        )
+        find_coffee = await db[Coffee].find_one(coffee.id, depth=1)
+        self.assertDictEqual(coffee_dict, find_coffee.dict())
         coffee_dict["primary_flavor"] = coffee_dict["primary_flavor"]["id"]
         coffee_dict["secondary_flavor"] = coffee_dict["secondary_flavor"]["id"]
-        self.assertDictEqual(
-            coffee_dict, (await db[Coffee].find_one(coffee.id)).dict()
-        )
+        self.assertDictEqual(coffee_dict, (await db[Coffee].find_one(coffee.id)).dict())
