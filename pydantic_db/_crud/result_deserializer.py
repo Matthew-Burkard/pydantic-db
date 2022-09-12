@@ -1,6 +1,4 @@
 """Deserialize a result set into Python models."""
-from __future__ import annotations
-
 import json
 from types import NoneType
 from typing import Any, Generic, get_args, Type, TypeVar
@@ -19,7 +17,7 @@ class ResultSchema(BaseModel):
 
     table_data: PyDBTableMeta | None = None
     is_array: bool
-    references: dict[str, ResultSchema] = Field(default_factory=lambda: {})
+    references: dict[str, "ResultSchema"] = Field(default_factory=lambda: {})
 
 
 class ResultSetDeserializer(Generic[DeserializedType]):
