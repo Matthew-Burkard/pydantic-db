@@ -91,7 +91,7 @@ python-versions = "*"
 
 [[package]]
 name = "mypy"
-version = "0.990"
+version = "0.991"
 description = "Optional static typing for Python"
 category = "dev"
 optional = false
@@ -195,7 +195,7 @@ testing = ["argcomplete", "hypothesis (>=3.56)", "mock", "nose", "pygments (>=2.
 
 [[package]]
 name = "sqlalchemy"
-version = "1.4.43"
+version = "1.4.44"
 description = "Database Abstraction Library"
 category = "main"
 optional = false
@@ -244,7 +244,7 @@ python-versions = ">=3.7"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "7795f93d2be2d507be02a786cfb745f50930babd438eda2ede574427e0f9f980"
+content-hash = "bb9909a4dfb83c0f60568c1f64c7a9bda42eade6b24fd832c9f8bd012ddf02cc"
 
 [metadata.files]
 aiosqlite = [
